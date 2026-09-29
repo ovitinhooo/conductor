@@ -109,6 +109,11 @@ When an implemented task or phase requires corrections, amendments, or additions
     manually in compatible clients). This safely rolls back associated git
     commits and resets the task state in `plan.md` back to pending `[ ]` to
     allow a clean restart.
+4.  **Spec & Plan Revisions (`conductor-revise`):** If requirements change, or
+    the plan is missing tasks or tests, instruct the agent to revise the track
+    (e.g., *"revise the plan for this track"*). This amends `spec.md` and
+    `plan.md` with a recorded revision history, never rewrites completed tasks,
+    and adds `Rework:` tasks for completed work the change invalidates.
 
 ### Phase Completion Verification and Checkpointing Protocol
 

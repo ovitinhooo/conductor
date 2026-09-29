@@ -221,6 +221,13 @@ unit of work. Conductor helps you generate two critical artifacts:
     building and why?
 -   **Plan**: An actionable to-do list containing phases, tasks, and sub-tasks.
 
+You can build the spec **interactively** (a short Q&A) or let Conductor
+**autogenerate** it from a detailed description, listing every assumption it
+made for you to confirm. If you already discussed the feature in the current
+conversation, Conductor summarizes that discussion and uses it as input. You can
+also point it at authoritative references (OpenAPI specs, schemas, design docs)
+that the spec and plan must conform to.
+
 **Generated Artifacts:**
 
 -   `conductor/tracks/<track_id>/spec.md`
@@ -270,6 +277,16 @@ following commands:
     /conductor:conductor-review
     ```
 
+*   **Revise spec or plan**: Change requirements, add missing tasks or tests,
+    or reorder pending work, before or during implementation. Completed tasks
+    are never rewritten; work invalidated by the change gets `Rework:` tasks.
+
+    ```bash
+    /conductor:conductor-revise
+    # OR with a description of the change
+    /conductor:conductor-revise "Also support SSO login; add tests for expired sessions"
+    ```
+
 --------------------------------------------------------------------------------
 
 ## 📋 Commands Reference
@@ -282,13 +299,14 @@ Command                          | Description                                  
 `/conductor:conductor-status`    | Displays the current progress of the tracks file and active tracks.                     | Reads `conductor/tracks.md`
 `/conductor:conductor-revert`    | Reverts a track, phase, or task by analyzing git history.                               | Reverts git history
 `/conductor:conductor-review`    | Reviews completed work against guidelines and the plan.                                 | Reads `plan.md`, `product-guidelines.md`
+`/conductor:conductor-revise`    | Revises a track's spec and plan while preserving completed work.                        | `conductor/tracks/<id>/spec.md`<br>`conductor/tracks/<id>/plan.md`
 
 --------------------------------------------------------------------------------
 
 ## 💡 Best Practices for Task Corrections
 
-When a task or phase in your Conductor project wasn't completed correctly, you
-have three native recovery flows:
+When a task or phase in your Conductor project wasn't completed correctly, or
+the requirements changed, you have four native recovery flows:
 
 1.  **Agile In-Flight Corrections**: If you notice an implementation gap while
     the agent is actively coding, specify the fix directly in the chat. The
@@ -302,6 +320,11 @@ have three native recovery flows:
     implementation is fundamentally flawed and needs a complete reset, run the
     revert command. This rolls back specific Git commits safely and resets the
     task state back to pending `[ ]` so you can prompt a fresh approach.
+4.  **Spec & Plan Revisions (`/conductor:conductor-revise`)**: If the
+    requirements change or the plan is missing tasks, revise the track instead
+    of editing files by hand. The spec gets a revision history entry, pending
+    tasks are updated, and completed work that no longer matches the spec gets
+    new `Rework:` tasks.
 
 --------------------------------------------------------------------------------
 
@@ -322,6 +345,8 @@ corresponding Conductor protocol in the background:
     current project status"*
 -   **To Revert or Fix a Task**: > *"Revert the last completed task"* or *"Let's
     review the completed phase"*
+-   **To Change a Plan**: > *"Revise the plan to also cover SSO"* or *"Add
+    missing edge-case tests to the current track"*
 
 --------------------------------------------------------------------------------
 

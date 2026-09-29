@@ -87,6 +87,8 @@ Adhere to this sequence to execute the selected track.
     -   Loop through each task in the track's **Implementation Plan** one by one.
     -   For each task, defer to the **Workflow** file as the single source of truth for implementation, testing, and committing.
     -   Ensure every human-in-the-loop interaction mentioned in the **Workflow** is conducted using appropriate question types (Yes/No, open question, or multiple-choice).
+    -   **Feedback Without Leaving the Flow:** If the user rejects a proposed change or tool call, or gives feedback while you are working, treat it as input to the current task: incorporate it and retry. Do NOT abandon the track or end the session because of a rejection.
+    -   **Scope Changes Mid-Implementation:** If the user asks for something that changes the spec or the set of tasks (a new requirement, dropped scope, extra tests beyond the current task), do NOT silently expand the current task. Pause, use the `conductor-revise` skill to amend the spec and plan (it preserves completed work), then resume the loop from the next pending task.
 
 5.  **Finalize Track:**
     -   After all tasks are completed, update the track status to `[x]` in the **Tracks Registry**.

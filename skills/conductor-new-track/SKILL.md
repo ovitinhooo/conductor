@@ -52,18 +52,40 @@ Adhere to this sequence precisely.
         user an **open question** to provide a brief description of the track
         (e.g., MVP/initial implementation, feature, bug fix, chore, etc.) they
         wish to start.
+    -   **Detailed Input:** The description may be long (e.g., a pasted brief,
+        an issue body, or acceptance criteria). You MUST use it in full: never
+        truncate or ignore parts of it, and treat it as the primary source for
+        the spec. Do not later ask questions it already answers.
+    -   **Conversation Capture:** If the current conversation already contains
+        discussion of this work (e.g., brainstorming, a design discussion, or a
+        bug investigation that happened before this skill was invoked),
+        summarize the relevant goals, decisions, and open questions, and ask the
+        user to confirm the summary using a **Yes/No question**. Use the
+        confirmed summary as input alongside the description.
 3.  **Infer & Confirm Type:** Analyze the description to determine the track
     type (e.g., MVP, Feature, Bug, Chore, Refactor). Ask the user for
     confirmation using a **Yes/No question**.
+4.  **Reference Materials:** Look for authoritative references that the spec
+    must conform to: files named in the description, and relevant contracts in
+    the repository (e.g., OpenAPI/Swagger files, `.proto` files, database
+    schemas or migrations, design docs). Ask the user using a
+    **multiple-choice question** which references apply, listing any candidates
+    you found, plus "None" and "Other (paths or URLs)". Read the selected
+    references. They take precedence over your own assumptions: whenever the
+    spec or plan touches something a reference defines, it MUST match the
+    reference.
 
-### 2.2 Interactive Specification Generation (`spec.md`)
+### 2.2 Specification Generation (`spec.md`)
 
-1.  **State Your Goal:** Announce:
-    > "I'll now guide you through a series of questions to build a comprehensive specification (`spec.md`) for this track."
+1.  **Strategic Action:** Explain that the `spec.md` is the "Source of Truth" for the feature. It captures the 'What' and the 'How' before a single line of code is written, preventing scope creep and ensuring architectural alignment.
 
-2.  **Strategic Action:** Explain that the `spec.md` is the "Source of Truth" for the feature. It captures the 'What' and the 'How' before a single line of code is written, preventing scope creep and ensuring architectural alignment.
+2.  **Determine Mode:** Ask the user to choose how to build the spec using a **single-choice question**:
+    -   **Interactive:** answer a short series of questions before the draft. Recommend this when the description is brief or leaves open decisions.
+    -   **Autogenerate:** draft the spec directly from the description, the conversation summary, the references, and the project context. Recommend this when the description is already detailed.
+    -   **If Autogenerate:** Skip the Questioning Phase (step 3) and go straight to drafting (step 4). Every decision you had to make without explicit input MUST be listed in an `Assumptions` section of the draft so the user can correct it during confirmation.
+    -   **If Interactive:** Announce: *"I'll now guide you through a series of questions to build a comprehensive specification (`spec.md`) for this track."*
 
-3.  **Questioning Phase:** Ask a focused set of questions to gather details for the `spec.md`. Tailor questions based on the track type.
+3.  **Questioning Phase (Interactive Mode Only):** Ask a focused set of questions to gather details for the `spec.md`. Tailor questions based on the track type.
     *   **General Guidelines:**
         *   Refer to information in **Product Definition**, **Tech Stack**, etc., to ask context-aware questions.
         *   Provide a brief explanation and clear examples for each question.
@@ -81,7 +103,7 @@ Adhere to this sequence precisely.
         *   Ask 2-3 relevant questions to obtain necessary details (e.g., reproduction steps for bugs, specific scope for chores, or success criteria).
     *   **Loop Control (CRITICAL):** At the end of your questioning phase, ALWAYS ask: *"Is this sufficient information to draft the spec, or would you like me to ask more questions to clarify further?"* Repeat the Q&A loop until the user confirms they are ready to proceed.
 
-4.  **Draft `spec.md`:** Once sufficient information is gathered, draft the content for the track's `spec.md` file, including sections like Overview, Functional Requirements, Non-Functional Requirements (if any), Acceptance Criteria, and Out of Scope.
+4.  **Draft `spec.md`:** Once sufficient information is gathered, draft the content for the track's `spec.md` file, including sections like Overview, Functional Requirements, Non-Functional Requirements (if any), Acceptance Criteria, and Out of Scope. Add a `References` section listing the confirmed reference materials (if any), and an `Assumptions` section when you had to fill gaps (always in Autogenerate mode).
 
 5.  **User Confirmation:**
     -   Present the drafted Specification to the user for review.
@@ -99,6 +121,7 @@ Adhere to this sequence precisely.
     *   Locate and read the **Workflow** document as linked in `conductor/index.md`.
     *   Generate a `plan.md` featuring a hierarchical list of Phases, Tasks, and Sub-tasks.
     *   **CRITICAL:** The plan structure MUST strictly follow the methodology defined in the **Workflow** (e.g., ensuring TDD tasks like "Write Tests" precede "Implementation").
+    *   **Traceability:** Each task that implements something defined by a reference in the spec MUST name that reference (e.g., "per `api/openapi.yaml` `POST /users`"), so the implementation can be checked against it.
     *   Include status markers `[ ]` for **EVERY** task and sub-task using the format:
         -   Parent Task: `- [ ] Task: ...`
         -   Sub-task: `- [ ] ...`
@@ -108,6 +131,7 @@ Adhere to this sequence precisely.
     -   Present the drafted Implementation Plan to the user for review.
     -   Ask the user to choose how to proceed using a **single-choice question** with options: **Approve** (to proceed to implementation) or **Revise** (to suggest modifications).
     -   Await user feedback and revise the `plan.md` content until confirmed.
+    -   **Plan Only, Never Implement:** Feedback at this stage changes the plan, not the code. Even if the feedback sounds like an instruction to build something, you MUST NOT start implementing until the plan is approved and the implementation handoff below is accepted.
 
 ### 2.4 Interactive Skill Recommendation
 
@@ -173,5 +197,6 @@ Adhere to this sequence precisely.
 
 8.  **Completion & Next Steps:**
     -   Inform the user that the track creation is complete and the registry has been updated.
+    -   Mention that the spec and plan can be changed at any time, before or during implementation, with the `conductor-revise` skill (e.g., *"revise the plan for this track"*).
     -   Ask the user if they would like to start the implementation right now using a **Yes/No question**.
     -   **Internal Handoff:** If the user agrees, you MUST use the `conductor-implement` skill to begin work. Present the transition as a natural progression without mentioning the skill name.
