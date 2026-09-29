@@ -52,6 +52,7 @@ Adhere to this sequence to identify and select the track to be implemented.
 
 2.  **Locate and Parse Tracks Registry:**
     -   Run the State Tool's `tracks` command to list all tracks with their ids, statuses, and progress. As a fallback, parse the registry manually as described below.
+    -   **Track Branches:** If the Workflow's `Isolation` setting is `branch` or `worktree`, run `tracks --branches` instead. Progress made on a `conductor/<track_id>` branch is not visible in the base branch's registry, so use each track's `isolation.branch_status` and `isolation.branch_progress` (when present) to decide which tracks are in progress.
     -   Locate the **Tracks Registry** (Default: `<conductor_dir>/tracks.md`).
     -   Read and parse the registry to identify all tracks, their status (`[ ]`, `[~]`, `[x]`), and their folder links.
         *   **Parsing Logic:** Recognize both the standard format `- [ ] **Track: <description>**` and the legacy heading format `## [ ] Track: <description>`. The track's link appears on the same line or on the lines that follow it, before the next track entry.
@@ -75,12 +76,7 @@ Adhere to this sequence to execute the selected track.
 
 1.  **Announce Action:** Announce which track you are beginning to implement.
 
-2.  **Update Status to 'In Progress':**
-    -   Skip this step if the track is already `[~]` (you are resuming it).
-    -   Before beginning any work, update the status of the selected track to `[~]` with the State Tool (`set-track --track <track_id> --state in_progress`, which also updates `metadata.json`), or manually in the **Tracks Registry** file.
-    -   Stage the changed files and commit: `chore(conductor): Mark track '<track_description>' as in progress`.
-
-3.  **Load Track Context:**
+2.  **Load Track Context:**
     -   Identify the track folder from the tracks file to get the `<track_id>`.
     -   Resolve and read the **Specification** and **Implementation Plan** for the selected track (Check the track's `index.md` for links, or use default paths).
     -   Resolve and read the **Workflow** document (Check `<conductor_dir>/index.md` for the link, or use default path).
@@ -88,14 +84,30 @@ Adhere to this sequence to execute the selected track.
     -   Check for installed skills in `.agents/skills/` (Workspace tier, where Conductor installs catalog skills) and any skills your host agent has already loaded natively.
     -   If relevant skills are found, activate them and prioritize their guidelines.
 
-4.  **Determine Execution Settings:** Read the **Execution Settings** from the **Workflow** with the State Tool's `settings` command (or read the `## Execution Settings` section manually). If the workflow has no such section (it predates these settings), use the defaults below without asking.
+3.  **Determine Execution Settings:** Read the **Execution Settings** from the **Workflow** with the State Tool's `settings` command (or read the `## Execution Settings` section manually). If the workflow has no such section (it predates these settings), use the defaults below without asking.
     -   **Autonomy** (default `phase`): `step` pauses after every task; `phase` pauses only for the manual verification at the end of each phase; `track` defers the manual verification of every phase to a single checklist at the end of the track.
     -   **Delegation** (default `auto`): `auto` runs each task in a fresh subagent when the host supports it; `inline` runs every task in this conversation.
-    -   **Resolve the Execution Mode:** Use **Delegated Mode** when Delegation is `auto` AND your host can dispatch a subagent AND the `conductor-task-executor` agent is available (in Claude Code it is named `conductor:conductor-task-executor`). Otherwise use **Inline Mode**. Tell the user in one sentence which mode and autonomy level you are using and that both can be changed in the Workflow's Execution Settings.
+    -   **Isolation** (default `none`): `none` works on the current branch; `branch` works on a dedicated `conductor/<track_id>` branch; `worktree` works on that branch in a separate working directory so several tracks can progress in parallel.
+    -   **Resolve the Execution Mode:** Use **Delegated Mode** when Delegation is `auto` AND your host can dispatch a subagent AND the `conductor-task-executor` agent is available (in Claude Code it is named `conductor:conductor-task-executor`). Otherwise use **Inline Mode**. Tell the user in one sentence which mode, autonomy level, and isolation you are using, and that they can be changed in the Workflow's Execution Settings.
 
-5.  **Task Loop:** Repeat the following until the State Tool reports `track_complete: true`.
+4.  **Prepare Isolation (Isolation `branch` or `worktree` only):** Run the State Tool's `branch-info --track <track_id>`. It reports the track branch (`conductor/<track_id>`), whether it exists, its worktree (if any), the current branch, and the recorded base branch.
+    -   **Clean Tree:** The working tree must be clean before switching. If it is not, ask the user using a **single-choice question** to commit, stash, or stop.
+    -   **Base Branch:** If no `base_branch` is recorded yet, the current branch is the base. Record it with `set-meta --track <track_id> --field base_branch=<current branch>` once you are on the track branch (it is committed with the first status update). If the current branch is itself a `conductor/*` track branch, stop and ask which branch to use as the base.
+    -   **Isolation `branch`:** Switch to the track branch, creating it from the base branch if it does not exist (`git switch conductor/<track_id>` or `git switch -c conductor/<track_id>`). All commits for this track now land on that branch.
+    -   **Isolation `worktree`:**
+        -   Make sure `.worktrees/` is ignored (`git check-ignore -q .worktrees/probe`). If it is not, add `.worktrees/` to `.gitignore` and commit on the base branch: `chore(conductor): Ignore track worktrees`.
+        -   Reuse the worktree reported by `branch-info` if there is one. Otherwise create it at the `default_worktree` path: `git worktree add .worktrees/<track_id> conductor/<track_id>` if the branch exists, or `git worktree add -b conductor/<track_id> .worktrees/<track_id>` if it does not.
+        -   From now on, the worktree is the project root for this track: run every command there, pass `--root <worktree path>` to the State Tool, read and edit files under it, and give its path to any subagent you dispatch. The original checkout stays untouched, so the user can implement another track from another session at the same time.
+    -   **Re-read the Plan:** After switching, re-read the spec and plan from the track branch (or worktree). They may contain progress or revisions that are not on the base branch.
+    -   Tell the user which branch (and worktree path) the track is being implemented on.
+5.  **Update Status to 'In Progress':**
+    -   Skip this step if the track is already `[~]` (you are resuming it).
+    -   Before beginning any work, update the status of the selected track to `[~]` with the State Tool (`set-track --track <track_id> --state in_progress`, which also updates `metadata.json`), or manually in the **Tracks Registry** file.
+    -   Stage the changed files and commit: `chore(conductor): Mark track '<track_description>' as in progress`.
 
-    a.  **Pick the Task:** Run `next-task --track <track_id>` (add `--skip-verification` when Autonomy is `track`). It returns an in-progress task first (`"resume": true`), so an interrupted session continues where it stopped instead of restarting the phase. `is_last_in_phase` tells you whether finishing it ends the phase, and `is_phase_verification` flags verification tasks. With `--skip-verification`, `task: null` together with a non-empty `deferred_verification_tasks` list means only the deferred verifications remain: go to step 5f.
+6.  **Task Loop:** Repeat the following until the State Tool reports `track_complete: true`.
+
+    a.  **Pick the Task:** Run `next-task --track <track_id>` (add `--skip-verification` when Autonomy is `track`). It returns an in-progress task first (`"resume": true`), so an interrupted session continues where it stopped instead of restarting the phase. `is_last_in_phase` tells you whether finishing it ends the phase, and `is_phase_verification` flags verification tasks. With `--skip-verification`, `task: null` together with a non-empty `deferred_verification_tasks` list means only the deferred verifications remain: go to step 6f.
 
     b.  **Verification Tasks Are Never Delegated:** If the task is a verification task, run the **Workflow**'s phase verification and checkpointing protocol yourself, in this conversation, because it requires the user.
 
@@ -113,7 +125,7 @@ Adhere to this sequence to execute the selected track.
         -   Mark complete and record the commit: `set-task --track <track_id> --task <n> --state completed --sha <commit_sha>` (add `--cascade` to also check its sub-tasks). Then commit the plan update as the **Workflow** describes (e.g., `conductor(plan): Mark task '<task>' as complete`).
         -   Record a phase checkpoint: `set-checkpoint --track <track_id> --phase <n> --sha <commit_sha>`.
         -   **Autonomy `step`:** after each task, show a two-line summary of what was done and ask using a **single-choice question**: **Continue** to the next task, **Review** the changes first, **Revise** the plan, or **Stop** here.
-        -   **Autonomy `track`:** when a phase's last non-verification task is done, still run the automated part of the phase verification protocol (the test suite and coverage) and record the phase checkpoint, but do not stop for the manual steps: draft them and keep them for step 5f. Stop anyway if the tests fail after the Workflow's allowed fix attempts.
+        -   **Autonomy `track`:** when a phase's last non-verification task is done, still run the automated part of the phase verification protocol (the test suite and coverage) and record the phase checkpoint, but do not stop for the manual steps: draft them and keep them for step 6f. Stop anyway if the tests fail after the Workflow's allowed fix attempts.
 
     f.  **Deferred Manual Verification (Autonomy `track` only):** When only deferred verification tasks remain, present one consolidated manual verification checklist, grouped by phase, in the format the **Workflow** prescribes, and ask the user to confirm. For each phase the user confirms, mark its verification task with `set-task ... --state completed --user-confirmed` and attach the verification report as the Workflow describes. If the user reports a problem, use the `conductor-revise` skill to add fix tasks and continue the loop.
 
@@ -124,7 +136,7 @@ Adhere to this sequence to execute the selected track.
     -   **Feedback Without Leaving the Flow:** If the user rejects a proposed change or tool call, or gives feedback while you are working, treat it as input to the current task: incorporate it and retry. Do NOT abandon the track or end the session because of a rejection.
     -   **Scope Changes Mid-Implementation:** If the user asks for something that changes the spec or the set of tasks (a new requirement, dropped scope, extra tests beyond the current task), do NOT silently expand the current task. Pause, use the `conductor-revise` skill to amend the spec and plan (it preserves completed work), then resume the loop from the next pending task.
 
-6.  **Completion Gate:** Before declaring the track complete, you MUST confirm it is actually finished. Do not announce completion and then reconsider.
+7.  **Completion Gate:** Before declaring the track complete, you MUST confirm it is actually finished. Do not announce completion and then reconsider.
     -   Confirm that `next-task` reports `track_complete: true`.
     -   Run the project's full test suite once and report the result.
     -   Ask the user using a **single-choice question**:
@@ -132,7 +144,7 @@ Adhere to this sequence to execute the selected track.
         -   **Something still needs fixing:** ask what, use the `conductor-revise` skill to add the fixes as new tasks (in a new `Follow-up Fixes` phase), and return to the Task Loop. The track is NOT complete until those tasks are done.
         -   **Stop for now:** leave the track in progress and end here.
 
-7.  **Finalize Track:**
+8.  **Finalize Track:**
     -   Update the track status to `[x]` with the State Tool (`set-track --track <track_id> --state completed`), or manually in the **Tracks Registry**. The tool refuses if any task is unfinished; in that case, return to the Task Loop instead of forcing it.
     -   Stage the changed files and commit: `chore(conductor): Mark track '<track_description>' as complete`.
     -   Announce that the track is fully complete.
@@ -188,3 +200,8 @@ Once the track is marked as complete and project documentation is synchronized, 
 4.  **Track Cleanup (only when the review was declined):** The review skill ends with the same cleanup step, so a completed track is always handled the same way. Ask the user what to do with the completed track using a **single-choice question**:
     -   **Archive** (Recommended: *keeps the registry focused on open work while preserving the spec, plan, and history*): run the State Tool's `archive --track <track_id>`, which moves the track folder to `<conductor_dir>/archive/<track_id>/` and removes its registry entry. Stage the changes and commit: `chore(conductor): Archive track '<track_description>'`.
     -   **Keep:** leave the track in the registry, marked `[x]`.
+5.  **Integrate the Track Branch (Isolation `branch` or `worktree` only):** Once the track is complete, documentation is synchronized, and any review and cleanup are done (Sections 4 and 5), ask the user how to integrate `conductor/<track_id>` into the recorded base branch using a **single-choice question**:
+    -   **Open a pull request** (Recommended when the repository has a remote: *the change gets reviewed like any other*): push with `git push -u origin conductor/<track_id>`, then open the pull request with the tools you have (e.g., the `gh` CLI), or give the user the URL to open it.
+    -   **Merge locally:** in the original checkout (not the worktree), switch to the base branch and run `git merge --no-ff conductor/<track_id>`. On conflicts, stop and give the user clear instructions to resolve them. Do not force anything.
+    -   **Keep the branch:** leave it for later.
+    -   **After a local merge:** ask using a **Yes/No question** whether to remove the worktree (`git worktree remove .worktrees/<track_id>`) and delete the branch (`git branch -d conductor/<track_id>`).

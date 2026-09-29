@@ -48,7 +48,7 @@ Before starting the status overview process, you MUST locate and read the projec
 Follow this sequence to provide a status overview.
 
 ### 2.0 Fast Path (State Tool)
-Run the State Tool's `status` command (and `status --track <track_id>` for any track you need in detail). Its JSON already contains the per-track statuses, the active track, per-phase and total task counts, the current in-progress task, and the next pending task. Use it to produce the report in 2.3, and skip 2.1 and 2.2. Follow 2.1 and 2.2 only if the tool cannot run.
+Run the State Tool's `status` command (and `status --track <track_id>` for any track you need in detail). If the Workflow's `Isolation` setting is `branch` or `worktree`, add `--branches`: progress made on `conductor/<track_id>` branches is not visible in the current branch's files, so report each track's `isolation.branch_status` and `isolation.branch_progress` (and its worktree path, if any) alongside the registry status. Its JSON already contains the per-track statuses, the active track, per-phase and total task counts, the current in-progress task, and the next pending task. Use it to produce the report in 2.3, and skip 2.1 and 2.2. Follow 2.1 and 2.2 only if the tool cannot run.
 
 ### 2.1 Read Project Plan
 1.  **Locate and Read:** Read the content of the **Tracks Registry**. Check `<conductor_dir>/index.md` for the link, otherwise use the Default Path: `<conductor_dir>/tracks.md`.

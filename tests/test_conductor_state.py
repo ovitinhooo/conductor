@@ -6,6 +6,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -90,7 +91,7 @@ class ConductorStateTest(unittest.TestCase):
     self.assertTrue(result["ok"])
     return result
 
-  def fail(self, *argv):
+  def fails(self, *argv):
     code, result = self.run_cli(*argv)
     self.assertEqual(code, 1, result)
     self.assertFalse(result["ok"])
@@ -163,7 +164,7 @@ class ConductorStateTest(unittest.TestCase):
   def test_register_rejects_duplicates(self):
     track_id = self.make_track()
     self.assertIn("already registered",
-                  self.fail("register", "--id", track_id, "--description",
+                  self.fails("register", "--id", track_id, "--description",
                             "Again"))
 
   def test_new_id_avoids_collisions(self):
@@ -203,7 +204,7 @@ class ConductorStateTest(unittest.TestCase):
 
   def test_verification_task_requires_user_confirmation(self):
     track_id = self.make_track()
-    error = self.fail("set-task", "--track", track_id, "--task", "6",
+    error = self.fails("set-task", "--track", track_id, "--task", "6",
                       "--state", "completed")
     self.assertIn("--user-confirmed", error)
     self.ok("set-task", "--track", track_id, "--task", "6", "--state",
@@ -212,7 +213,7 @@ class ConductorStateTest(unittest.TestCase):
   def test_set_task_rejects_non_sha(self):
     track_id = self.make_track()
     self.assertIn("not a commit SHA",
-                  self.fail("set-task", "--track", track_id, "--task", "4",
+                  self.fails("set-task", "--track", track_id, "--task", "4",
                             "--state", "completed", "--sha", "HEAD"))
 
   def test_set_task_preserves_crlf_line_endings(self):
@@ -238,7 +239,7 @@ class ConductorStateTest(unittest.TestCase):
   def test_set_track_completed_requires_finished_plan(self):
     track_id = self.make_track()
     self.assertIn("unfinished task",
-                  self.fail("set-track", "--track", track_id, "--state",
+                  self.fails("set-track", "--track", track_id, "--state",
                             "completed"))
     self.ok("set-track", "--track", track_id, "--state", "completed",
             "--force")
@@ -272,7 +273,7 @@ class ConductorStateTest(unittest.TestCase):
 
   def test_archive_refuses_unfinished_track(self):
     track_id = self.make_track()
-    self.assertIn("not completed", self.fail("archive", "--track", track_id))
+    self.assertIn("not completed", self.fails("archive", "--track", track_id))
 
   def test_legacy_root_relative_links_are_resolved(self):
     self.write("conductor/tracks/old/plan.md", PLAN)
@@ -304,7 +305,8 @@ class ConductorStateTest(unittest.TestCase):
   def test_settings_default_when_section_missing(self):
     result = self.ok("settings")
     self.assertEqual(result["settings"], {"autonomy": "phase",
-                                          "delegation": "auto"})
+                                          "delegation": "auto",
+                                          "isolation": "none"})
 
   def test_settings_read_from_workflow(self):
     self.write("conductor/workflow.md",
@@ -360,6 +362,68 @@ class ConductorStateTest(unittest.TestCase):
     result = self.ok("locate")
     self.assertEqual(result["conductor_dir"], "conductor")
     self.assertIn(".conductor", result["warnings"][0])
+
+  # Track isolation ----------------------------------------------------------
+
+  def git(self, *args, cwd=None):
+    return subprocess.run(["git", "-C", cwd or self.root] + list(args),
+                          check=True, capture_output=True, text=True).stdout
+
+  def init_git(self):
+    self.git("init", "-q", "-b", "main")
+    self.git("config", "user.email", "t@example.com")
+    self.git("config", "user.name", "Test")
+    self.git("add", "-A")
+    self.git("commit", "-q", "-m", "init")
+
+  def test_set_meta_records_fields_and_protects_managed_ones(self):
+    track_id = self.make_track()
+    result = self.ok("set-meta", "--track", track_id, "--field",
+                     "base_branch=main", "--field", "note=a=b")
+    self.assertEqual(result["metadata"]["base_branch"], "main")
+    self.assertEqual(result["metadata"]["note"], "a=b")
+    self.assertIn("managed", self.fails("set-meta", "--track", track_id,
+                                        "--field", "status=done"))
+
+  def test_branch_info_without_branch(self):
+    track_id = self.make_track()
+    self.init_git()
+    result = self.ok("branch-info", "--track", track_id)
+    self.assertEqual(result["branch"], "conductor/" + track_id)
+    self.assertFalse(result["branch_exists"])
+    self.assertEqual(result["isolation_setting"], "none")
+    self.assertEqual(result["current_branch"], "main")
+    self.assertEqual(result["default_worktree"], ".worktrees/" + track_id)
+
+  def test_progress_on_track_branch_and_worktree_is_reported(self):
+    track_id = self.make_track()
+    self.init_git()
+    worktree = os.path.join(self.root, ".worktrees", track_id)
+    self.git("worktree", "add", "-q", "-b", "conductor/" + track_id, worktree)
+    code, _ = self.run_cli_at(worktree, "set-task", "--track", track_id,
+                              "--task", "4", "--state", "completed", "--sha",
+                              "abcdef1")
+    self.assertEqual(code, 0)
+    self.run_cli_at(worktree, "set-track", "--track", track_id, "--state",
+                    "in_progress")
+    self.git("commit", "-q", "-am", "progress", cwd=worktree)
+
+    result = self.ok("tracks", "--branches")
+    info = result["tracks"][0]["isolation"]
+    self.assertTrue(info["branch_exists"])
+    self.assertEqual(os.path.realpath(info["worktree"]),
+                     os.path.realpath(worktree))
+    self.assertEqual(info["branch_status"], "in_progress")
+    self.assertEqual(info["branch_progress"]["completed"], 4)
+    # The base branch itself is untouched.
+    self.assertEqual(result["tracks"][0]["status"], "pending")
+    self.assertEqual(result["tracks"][0]["progress"]["completed"], 3)
+
+  def run_cli_at(self, root, *argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+      code = state.main(list(argv) + ["--root", root])
+    return code, json.loads(out.getvalue())
 
   # Doctor ------------------------------------------------------------------
 

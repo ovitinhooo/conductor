@@ -80,6 +80,7 @@ Before starting the review process, you MUST locate and read the project's found
     -   Read the track's `plan.md`.
     -   **Extract Commits:** Parse `plan.md` to find recorded git commit hashes (usually in the "Completed" tasks or "History" section).
     -   **Determine Revision Range:** Identify the start (first commit parent) and end (last commit).
+    -   **Track Branches:** If the track was implemented on its own branch (the State Tool's `branch-info --track <track_id>` reports `branch_exists: true` and a `base_branch`), review that branch against its base instead: use `<base_branch>...conductor/<track_id>` as the revision range, and run the review from the track's worktree if it has one.
 3.  **Load and Analyze Changes (Smart Chunking):**
     -   **Volume Check:** Run `git diff --shortstat <revision_range> -- . ':!<conductor_dir>'` first.
     -   **Strategy Selection:**
@@ -223,3 +224,4 @@ Once the review process and any subsequent actions (fixes, commits, cleanup) are
 3.  **Internal Handoff (Optional):**
     - If the user explicitly asks to revert work, you MUST use the `conductor-revert` skill to guide them through the process.
     - Otherwise, inform the user they can use the `conductor-status` skill to see the current project overview, or use the `conductor-revert` skill manually if they decide to revert work later.
+4.  **Integrate the Track Branch:** If the reviewed track lives on a `conductor/<track_id>` branch that is not merged into its base branch yet, offer the same integration choices as the `conductor-implement` skill's final step (open a pull request, merge locally, or keep the branch) and follow them in the same way.

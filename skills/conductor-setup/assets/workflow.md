@@ -31,6 +31,15 @@ Change a value at any time; it applies from the next task on.
     -   `auto`: run each task in a fresh subagent when the agent host supports
         it, so long tracks don't fill the main conversation's context.
     -   `inline`: run every task in the main conversation.
+-   **Isolation:** `none`
+    -   `none`: implement tracks on the current branch.
+    -   `branch`: implement each track on its own `conductor/<track_id>`
+        branch, created from the current branch, and offer to open a pull
+        request or merge it when the track is done.
+    -   `worktree`: like `branch`, but in a separate working directory
+        (`.worktrees/<track_id>/`), so several tracks can be implemented at
+        the same time from different sessions. Make sure test runners and
+        linters ignore `.worktrees/`.
 
 ## Task Workflow
 

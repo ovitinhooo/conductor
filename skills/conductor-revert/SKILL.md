@@ -103,7 +103,7 @@ Before starting the revert process, you MUST locate and read the project's found
     > `  - <sha_code_commit> ('feat: Add user profile')`
     > `  - <sha_plan_commit> ('conductor(plan): Mark task complete')`
 
-2.  **Choose Strategy:** Ask the user to choose the revert strategy using a **single-choice question** with options:
+2.  **Choose Strategy:** If the target is a whole track that was implemented on its own unmerged `conductor/<track_id>` branch (check with the State Tool's `branch-info --track <track_id>`), add a **Discard Track Branch** option: delete the worktree (`git worktree remove`) and the branch (`git branch -D`) after confirming with a **Yes/No question** that its unmerged commits will be lost, then revert only the track-creation commit on the base branch if the user also wants the track removed. Ask the user to choose the revert strategy using a **single-choice question** with options:
     - **Safe (Recommended)**: Use `git revert` to create new commits that undo the changes. This preserves history and is safe for shared branches.
     - **Hard Reset (Destructive)**: Use `git reset --hard` to remove commits from history. This will lose all uncommitted changes and rewritten history. **WARNING: This is destructive and should be used with caution.**
     - **Revise**: Adjust the target or the list of commits before anything is modified.

@@ -6,8 +6,9 @@ an agent: markers get lost, SHAs are appended in the wrong place, and completed
 tracks end up in inconsistent states. This script performs those operations the
 same way every time and reports the result as JSON on stdout.
 
-It only touches files. It never runs VCS commands, so committing stays with the
-calling skill.
+Commands that change state only touch files and never run VCS commands, so
+committing stays with the calling skill. Read-only git queries (`branch-info`,
+`--branches`) report on per-track branches and worktrees.
 
 Usage:
   python3 conductor_state.py <command> [options] --root <project_root>
@@ -23,6 +24,8 @@ Commands:
   set-task         Change a task's status marker and optionally record a SHA.
   set-checkpoint   Record a phase checkpoint SHA on a phase heading.
   set-track        Change a track's status in the registry and metadata.
+  set-meta         Set string fields in a track's metadata.json.
+  branch-info      Report a track's isolation branch and worktree.
   settings         Read execution settings from workflow.md (with defaults).
   new-id           Generate a unique track id from a short name.
   register         Create a track's metadata/index files and registry entry.
@@ -38,6 +41,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 DEFAULT_CONDUCTOR_DIR = "conductor"
@@ -107,7 +111,10 @@ SETTING_RE = re.compile(
 SETTINGS = {
     "autonomy": ("phase", ("step", "phase", "track")),
     "delegation": ("auto", ("auto", "inline")),
+    "isolation": ("none", ("none", "branch", "worktree")),
 }
+TRACK_BRANCH_PREFIX = "conductor/"
+WORKTREES_DIR = ".worktrees"
 
 
 class StateError(Exception):
@@ -541,11 +548,81 @@ def update_metadata(track_dir, **fields):
 
 
 # ---------------------------------------------------------------------------
+# Git (read-only)
+# ---------------------------------------------------------------------------
+
+
+def _git(root, *args):
+  """Runs a read-only git command; returns stdout, or None on failure."""
+  try:
+    result = subprocess.run(["git", "-C", root] + list(args),
+                            capture_output=True, text=True, check=False)
+  except OSError:
+    return None
+  return result.stdout if result.returncode == 0 else None
+
+
+def _worktrees(root):
+  """Maps branch names to worktree paths from `git worktree list`."""
+  output = _git(root, "worktree", "list", "--porcelain") or ""
+  mapping, path = {}, None
+  for line in output.splitlines():
+    if line.startswith("worktree "):
+      path = line[len("worktree "):]
+    elif line.startswith("branch refs/heads/") and path:
+      mapping[line[len("branch refs/heads/"):]] = path
+  return mapping
+
+
+def branch_info(project, entry):
+  """Describes a track's isolation branch and worktree."""
+  branch = TRACK_BRANCH_PREFIX + (entry["id"] or "")
+  exists = _git(project.root, "rev-parse", "--verify", "--quiet",
+                "refs/heads/" + branch) is not None
+  worktree = _worktrees(project.root).get(branch)
+  current = (_git(project.root, "rev-parse", "--abbrev-ref", "HEAD")
+             or "").strip() or None
+  metadata = {}
+  if entry.get("dir"):
+    path = track_files(entry["dir"])["metadata"]
+    if os.path.isfile(path):
+      try:
+        metadata = _load_json(path)
+      except ValueError:
+        metadata = {}
+  info = {
+      "branch": branch,
+      "branch_exists": exists,
+      "worktree": worktree,
+      "default_worktree": "%s/%s" % (WORKTREES_DIR, entry["id"]),
+      "current_branch": current,
+      "base_branch": metadata.get("base_branch"),
+      "branch_status": None,
+      "branch_progress": None,
+  }
+  if exists and entry.get("dir"):
+    registry_rel = _rel(project.root, project.registry_path)
+    registry = _git(project.root, "show", "%s:%s" % (branch, registry_rel))
+    if registry is not None:
+      for other in parse_registry(registry.splitlines(keepends=True)):
+        if other["link"] and os.path.basename(
+            _track_dir_from_link(project.registry_path, other["link"])
+        ) == entry["id"]:
+          info["branch_status"] = other["status"]
+    plan_rel = _rel(project.root, track_files(entry["dir"])["plan"])
+    plan = _git(project.root, "show", "%s:%s" % (branch, plan_rel))
+    if plan is not None:
+      phases = parse_plan(plan.splitlines(keepends=True))
+      info["branch_progress"] = _counts([t for p in phases for t in p["tasks"]])
+  return info
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
 
-def cmd_tracks(project, _args):
+def cmd_tracks(project, args):
   entries, _ = load_tracks(project)
   tracks = []
   for entry in entries:
@@ -563,6 +640,8 @@ def cmd_tracks(project, _args):
         item["progress"] = _counts([t for p in phases for t in p["tasks"]])
       except StateError:
         pass
+    if getattr(args, "branches", False) and entry["id"]:
+      item["isolation"] = branch_info(project, entry)
     tracks.append(item)
   return {
       "registry": _rel(project.root, project.registry_path),
@@ -579,6 +658,8 @@ def cmd_status(project, args):
                   "status": entry["status"]},
     }
     result.update(summarize_plan(phases))
+    if args.branches:
+      result["isolation"] = branch_info(project, entry)
     return result
   overview = cmd_tracks(project, args)
   statuses = [t["status"] for t in overview["tracks"]]
@@ -912,6 +993,28 @@ def cmd_archive(project, args):
   }
 
 
+def cmd_set_meta(project, args):
+  entry = find_track(project, args.track)
+  fields = {}
+  for item in args.field:
+    key, sep, value = item.partition("=")
+    if not sep or not re.match(r"^[a-z][a-z0-9_]*$", key):
+      raise StateError("Fields must look like key=value, got '%s'." % item)
+    if key in ("track_id", "status", "created_at", "updated_at"):
+      raise StateError("'%s' is managed by other commands." % key)
+    fields[key] = value
+  data = update_metadata(entry["dir"], **fields)
+  return {"track": entry["id"], "metadata": data}
+
+
+def cmd_branch_info(project, args):
+  entry = find_track(project, args.track)
+  settings, _ = read_settings(project)
+  result = {"track": entry["id"], "isolation_setting": settings["isolation"]}
+  result.update(branch_info(project, entry))
+  return result
+
+
 def cmd_touch(project, args):
   entry = find_track(project, args.track)
   data = update_metadata(entry["dir"])
@@ -1104,11 +1207,15 @@ def build_parser():
                  help="Repair safe inconsistencies (metadata, index links).")
   p.set_defaults(func=cmd_doctor)
 
+  branches_help = ("Also report each track's conductor/<id> branch, worktree,"
+                   " and the progress recorded on that branch.")
   p = sub.add_parser("tracks", parents=[common], help="List tracks.")
+  p.add_argument("--branches", action="store_true", help=branches_help)
   p.set_defaults(func=cmd_tracks)
 
   p = sub.add_parser("status", parents=[common], help="Summarize progress.")
   p.add_argument("--track", help="Track id or description (default: all).")
+  p.add_argument("--branches", action="store_true", help=branches_help)
   p.set_defaults(func=cmd_status)
 
   p = sub.add_parser("next-task", parents=[common],
@@ -1151,6 +1258,18 @@ def build_parser():
   p.add_argument("--force", action="store_true",
                  help="Allow completing a track with unfinished tasks.")
   p.set_defaults(func=cmd_set_track)
+
+  p = sub.add_parser("set-meta", parents=[common],
+                     help="Set string fields in a track's metadata.json.")
+  p.add_argument("--track", required=True)
+  p.add_argument("--field", action="append", required=True,
+                 help="key=value (repeatable), e.g. base_branch=main.")
+  p.set_defaults(func=cmd_set_meta)
+
+  p = sub.add_parser("branch-info", parents=[common],
+                     help="Report a track's isolation branch and worktree.")
+  p.add_argument("--track", required=True)
+  p.set_defaults(func=cmd_branch_info)
 
   p = sub.add_parser("new-id", parents=[common],
                      help="Generate a unique track id.")

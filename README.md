@@ -278,6 +278,14 @@ them.
     long tracks no longer exhaust its context. `inline` runs every task in the
     main conversation.
 
+-   **Isolation**: `none` (default) works on the current branch. `branch`
+    implements each track on its own `conductor/<track_id>` branch and offers
+    to open a pull request or merge it when the track is done. `worktree` does
+    the same in a separate working directory (`.worktrees/<track_id>/`), so you
+    can implement several tracks at once from different sessions. Tracks are
+    still registered on the base branch, and `/conductor:conductor-status`
+    reports the progress recorded on each track branch.
+
 An interrupted session resumes from the task that was in progress.
 
 During implementation, you can also monitor, revert, or review work using the

@@ -48,6 +48,7 @@ Adhere to this sequence precisely.
 ### 2.1 Track Description & Classification
 
 1.  **Load Project Context:** Read and process the core project documents linked in `<conductor_dir>/index.md`.
+    -   **Track Branches:** Tracks are registered on the base branch so every branch can see them. If the current branch is a `conductor/*` track branch (e.g., `git rev-parse --abbrev-ref HEAD` starts with `conductor/`), warn the user that the new track would only be registered on that branch, and ask using a **single-choice question** whether to switch to the base branch first (Recommended) or continue here.
 2.  **Acquire Track Description:**
     -   If the task description was not provided in the initial request, ask the
         user an **open question** to provide a brief description of the track
