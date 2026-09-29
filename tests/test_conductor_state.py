@@ -278,6 +278,41 @@ class ConductorStateTest(unittest.TestCase):
     result = self.ok("next-task", "--track", "old")
     self.assertEqual(result["task"]["index"], 4)
 
+  def test_next_task_can_defer_verification_tasks(self):
+    plan = ("## Phase 1\n- [x] Task: A 1234567\n"
+            "- [ ] Task: Phase Verification & Checkpoint\n"
+            "## Phase 2\n- [ ] Task: B\n"
+            "- [ ] Task: Phase Verification & Checkpoint\n")
+    track_id = self.make_track(plan=plan)
+    result = self.ok("next-task", "--track", track_id, "--skip-verification")
+    self.assertEqual(result["task"]["text"], "Task: B")
+    self.ok("set-task", "--track", track_id, "--task", "3", "--state",
+            "completed", "--sha", "abcdef1")
+    result = self.ok("next-task", "--track", track_id, "--skip-verification")
+    self.assertIsNone(result["task"])
+    self.assertFalse(result["track_complete"])
+    self.assertEqual([t["index"] for t in result["deferred_verification_tasks"]],
+                     [2, 4])
+
+  # Settings ----------------------------------------------------------------
+
+  def test_settings_default_when_section_missing(self):
+    result = self.ok("settings")
+    self.assertEqual(result["settings"], {"autonomy": "phase",
+                                          "delegation": "auto"})
+
+  def test_settings_read_from_workflow(self):
+    self.write("conductor/workflow.md",
+               "# Project Workflow\n\n## Execution Settings\n\n"
+               "-   **Autonomy:** `track`\n"
+               "    -   `step`: pause after every task.\n"
+               "-   **Delegation:** `bogus`\n\n"
+               "## Task Workflow\n\n-   **Autonomy:** `step`\n")
+    result = self.ok("settings")
+    self.assertEqual(result["settings"]["autonomy"], "track")
+    self.assertEqual(result["settings"]["delegation"], "auto")
+    self.assertIn("delegation=bogus", result["warnings"][0])
+
   # Doctor ------------------------------------------------------------------
 
   def test_doctor_healthy_project(self):

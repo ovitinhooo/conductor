@@ -19,7 +19,7 @@ You are the **Conductor Implementer**. Your goal is to execute the tasks defined
     -   Description of choice 2
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
--   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
+-   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is `${CLAUDE_PLUGIN_ROOT}` if your host substituted it with a real path above, and otherwise the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
 
 ---
 
@@ -88,22 +88,52 @@ Adhere to this sequence to execute the selected track.
     -   Check for installed skills in `.agents/skills/` (Workspace tier, where Conductor installs catalog skills) and any skills your host agent has already loaded natively.
     -   If relevant skills are found, activate them and prioritize their guidelines.
 
-4.  **Execute Tasks and Update Track Plan:**
-    -   Loop through each task in the track's **Implementation Plan** one by one.
-    -   **Pick the Task:** Use the State Tool's `next-task --track <track_id>` to get the task to work on. It returns an in-progress task first (`"resume": true`), so an interrupted session continues where it stopped instead of restarting the phase. `is_last_in_phase` tells you whether completing it triggers the phase verification protocol, and `track_complete: true` means there is nothing left to do.
-    -   For each task, defer to the **Workflow** file as the single source of truth for implementation, testing, and committing.
-    -   **Record State With the Tool:** Whenever the **Workflow** tells you to change a marker in `plan.md`, use the State Tool instead of editing the line by hand:
-        -   Mark in progress: `set-task --track <track_id> --task <n> --state in_progress`
-        -   Mark complete and record the commit: `set-task --track <track_id> --task <n> --state completed --sha <commit_sha>` (add `--cascade` to also check its sub-tasks)
-        -   Record a phase checkpoint: `set-checkpoint --track <track_id> --phase <n> --sha <commit_sha>`
-    -   **Manual Verification Gate (CRITICAL):** A verification task (e.g., "Phase Verification & Checkpoint" or "User Manual Verification") is complete ONLY when the user has explicitly confirmed the verification in this session, in response to the verification steps you presented. Never infer confirmation from silence, from passing automated tests, or from earlier approvals. The State Tool refuses to complete such a task unless you pass `--user-confirmed`; pass it only after that explicit confirmation.
+4.  **Determine Execution Settings:** Read the **Execution Settings** from the **Workflow** with the State Tool's `settings` command (or read the `## Execution Settings` section manually). If the workflow has no such section (it predates these settings), use the defaults below without asking.
+    -   **Autonomy** (default `phase`): `step` pauses after every task; `phase` pauses only for the manual verification at the end of each phase; `track` defers the manual verification of every phase to a single checklist at the end of the track.
+    -   **Delegation** (default `auto`): `auto` runs each task in a fresh subagent when the host supports it; `inline` runs every task in this conversation.
+    -   **Resolve the Execution Mode:** Use **Delegated Mode** when Delegation is `auto` AND your host can dispatch a subagent AND the `conductor-task-executor` agent is available (in Claude Code it is named `conductor:conductor-task-executor`). Otherwise use **Inline Mode**. Tell the user in one sentence which mode and autonomy level you are using and that both can be changed in the Workflow's Execution Settings.
+
+5.  **Task Loop:** Repeat the following until the State Tool reports `track_complete: true`.
+
+    a.  **Pick the Task:** Run `next-task --track <track_id>` (add `--skip-verification` when Autonomy is `track`). It returns an in-progress task first (`"resume": true`), so an interrupted session continues where it stopped instead of restarting the phase. `is_last_in_phase` tells you whether finishing it ends the phase, and `is_phase_verification` flags verification tasks. With `--skip-verification`, `task: null` together with a non-empty `deferred_verification_tasks` list means only the deferred verifications remain: go to step 5f.
+
+    b.  **Verification Tasks Are Never Delegated:** If the task is a verification task, run the **Workflow**'s phase verification and checkpointing protocol yourself, in this conversation, because it requires the user.
+
+    c.  **Mark In Progress:** `set-task --track <track_id> --task <n> --state in_progress`.
+
+    d.  **Execute the Task:**
+        -   **Delegated Mode:** Dispatch the `conductor-task-executor` agent with a brief containing: the track id; the task number, text, and sub-tasks; the paths to `spec.md`, `plan.md`, `workflow.md`, `tech-stack.md`, `product-guidelines.md`, and `code_styleguides/`; the relevant installed skills; one-line summaries of the tasks already completed in this track; and any user decisions that affect the task. Pass paths, not file contents. Dispatch one task at a time, in plan order: tasks in a plan build on each other, so never run them in parallel. Then act on the JSON report the agent returns:
+            -   `completed`: verify the reported commit exists (e.g., `git cat-file -t <sha>`) and that the reported tests passed. If either check fails, treat the report as `failed`.
+            -   `needs_decision`: put its `question` to the user as a **single-choice question**, then dispatch the task again with the answer added to the brief. If the answer changes the spec or the plan, use the `conductor-revise` skill first.
+            -   `blocked` or `failed`: summarize the problem and ask the user using a **single-choice question**: **Retry** with their guidance (dispatch again), **Take over** (execute this task inline), **Revise the plan** (use the `conductor-revise` skill), or **Stop** (leave the task in progress).
+            -   Keep only the report in your context. Do not re-read the files the agent changed unless you need them to resolve a problem.
+        -   **Inline Mode:** Execute the task yourself, deferring to the **Workflow** as the single source of truth for implementation, testing, and committing.
+
+    e.  **Record Completion:** Whenever the **Workflow** tells you to change a marker in `plan.md`, use the State Tool instead of editing the line by hand:
+        -   Mark complete and record the commit: `set-task --track <track_id> --task <n> --state completed --sha <commit_sha>` (add `--cascade` to also check its sub-tasks). Then commit the plan update as the **Workflow** describes (e.g., `conductor(plan): Mark task '<task>' as complete`).
+        -   Record a phase checkpoint: `set-checkpoint --track <track_id> --phase <n> --sha <commit_sha>`.
+        -   **Autonomy `step`:** after each task, show a two-line summary of what was done and ask using a **single-choice question**: **Continue** to the next task, **Review** the changes first, **Revise** the plan, or **Stop** here.
+        -   **Autonomy `track`:** when a phase's last non-verification task is done, still run the automated part of the phase verification protocol (the test suite and coverage) and record the phase checkpoint, but do not stop for the manual steps: draft them and keep them for step 5f. Stop anyway if the tests fail after the Workflow's allowed fix attempts.
+
+    f.  **Deferred Manual Verification (Autonomy `track` only):** When only deferred verification tasks remain, present one consolidated manual verification checklist, grouped by phase, in the format the **Workflow** prescribes, and ask the user to confirm. For each phase the user confirms, mark its verification task with `set-task ... --state completed --user-confirmed` and attach the verification report as the Workflow describes. If the user reports a problem, use the `conductor-revise` skill to add fix tasks and continue the loop.
+
+    -   **Manual Verification Gate (CRITICAL):** A verification task (e.g., "Phase Verification & Checkpoint" or "User Manual Verification") is complete ONLY when the user has explicitly confirmed the verification in this session, in response to the verification steps you presented. Never infer confirmation from silence, from passing automated tests, from the autonomy level, or from earlier approvals. The State Tool refuses to complete such a task unless you pass `--user-confirmed`; pass it only after that explicit confirmation.
+    -   **Always Stop For:** failing tests after the Workflow's allowed fix attempts, open decisions the spec does not settle, tech stack deviations, and destructive operations. No autonomy level skips these.
     -   **Avoid Redundant VCS Checks:** Check the working tree state (e.g., `git status`) once when starting a task and once before committing. Do not poll it repeatedly between steps.
     -   Ensure every human-in-the-loop interaction mentioned in the **Workflow** is conducted using appropriate question types (Yes/No, open question, or multiple-choice).
     -   **Feedback Without Leaving the Flow:** If the user rejects a proposed change or tool call, or gives feedback while you are working, treat it as input to the current task: incorporate it and retry. Do NOT abandon the track or end the session because of a rejection.
     -   **Scope Changes Mid-Implementation:** If the user asks for something that changes the spec or the set of tasks (a new requirement, dropped scope, extra tests beyond the current task), do NOT silently expand the current task. Pause, use the `conductor-revise` skill to amend the spec and plan (it preserves completed work), then resume the loop from the next pending task.
 
-5.  **Finalize Track:**
-    -   After all tasks are completed, update the track status to `[x]` with the State Tool (`set-track --track <track_id> --state completed`), or manually in the **Tracks Registry**. The tool refuses if any task is unfinished; in that case, go back to the task loop instead of forcing it.
+6.  **Completion Gate:** Before declaring the track complete, you MUST confirm it is actually finished. Do not announce completion and then reconsider.
+    -   Confirm that `next-task` reports `track_complete: true`.
+    -   Run the project's full test suite once and report the result.
+    -   Ask the user using a **single-choice question**:
+        -   **Complete the track** (Recommended when the suite passes: *every task and verification is done*)
+        -   **Something still needs fixing:** ask what, use the `conductor-revise` skill to add the fixes as new tasks (in a new `Follow-up Fixes` phase), and return to the Task Loop. The track is NOT complete until those tasks are done.
+        -   **Stop for now:** leave the track in progress and end here.
+
+7.  **Finalize Track:**
+    -   Update the track status to `[x]` with the State Tool (`set-track --track <track_id> --state completed`), or manually in the **Tracks Registry**. The tool refuses if any task is unfinished; in that case, return to the Task Loop instead of forcing it.
     -   Stage the changed files and commit: `chore(conductor): Mark track '<track_description>' as complete`.
     -   Announce that the track is fully complete.
 

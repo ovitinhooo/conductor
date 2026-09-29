@@ -22,6 +22,7 @@ Commands:
   set-task         Change a task's status marker and optionally record a SHA.
   set-checkpoint   Record a phase checkpoint SHA on a phase heading.
   set-track        Change a track's status in the registry and metadata.
+  settings         Read execution settings from workflow.md (with defaults).
   new-id           Generate a unique track id from a short name.
   register         Create a track's metadata/index files and registry entry.
   archive          Move a track to the archive and remove it from the registry.
@@ -89,6 +90,18 @@ VERIFICATION_RE = re.compile(
     re.IGNORECASE,
 )
 SHA_ARG_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+SETTINGS_HEADING_RE = re.compile(r"^#{2,3}\s+Execution Settings\s*$",
+                                 re.IGNORECASE)
+SETTING_RE = re.compile(
+    r"^\s{0,3}[-*]\s+\*\*(?P<key>[A-Za-z][A-Za-z ]*?):\*\*\s*`?"
+    r"(?P<value>[A-Za-z_-]+)`?"
+)
+# Execution settings read from workflow.md, with the value used when a
+# workflow predates the setting or holds an unknown value.
+SETTINGS = {
+    "autonomy": ("phase", ("step", "phase", "track")),
+    "delegation": ("auto", ("auto", "inline")),
+}
 
 
 class StateError(Exception):
@@ -555,9 +568,14 @@ def cmd_status(project, args):
 def cmd_next_task(project, args):
   entry = find_track(project, args.track)
   _, _, phases = _load_plan(entry)
+  deferred = []
   for wanted in ("in_progress", "pending"):
     for phase in phases:
       for task in phase["tasks"]:
+        if (args.skip_verification and task["status"] == wanted
+            and VERIFICATION_RE.search(task["text"])):
+          deferred.append(_task_view(task, phase, phase["tasks"]))
+          continue
         if task["status"] == wanted:
           return {
               "track": entry["id"],
@@ -566,7 +584,46 @@ def cmd_next_task(project, args):
               "track_complete": False,
           }
   return {"track": entry["id"], "resume": False, "task": None,
-          "track_complete": True}
+          "track_complete": not deferred,
+          "deferred_verification_tasks": deferred}
+
+
+def read_settings(project):
+  """Parses the `Execution Settings` section of workflow.md."""
+  values, unknown = {}, []
+  path = project.core_file("workflow.md")
+  if os.path.isfile(path):
+    in_section = False
+    for raw in _read_lines(path):
+      text = _strip_eol(raw)
+      if text.startswith("#"):
+        in_section = bool(SETTINGS_HEADING_RE.match(text))
+        continue
+      match = SETTING_RE.match(text) if in_section else None
+      if match:
+        key = match.group("key").strip().lower().replace(" ", "_")
+        values[key] = match.group("value").lower()
+  settings = {}
+  for key, (default, allowed) in SETTINGS.items():
+    value = values.get(key, default)
+    if value not in allowed:
+      unknown.append("%s=%s" % (key, value))
+      value = default
+    settings[key] = value
+  for key, value in values.items():
+    settings.setdefault(key, value)
+  return settings, unknown
+
+
+def cmd_settings(project, _args):
+  settings, unknown = read_settings(project)
+  result = {"settings": settings}
+  if unknown:
+    result["warnings"] = [
+        "Unknown value %s; using the default instead." % item
+        for item in unknown
+    ]
+  return result
 
 
 def _set_mark(line, mark):
@@ -990,7 +1047,14 @@ def build_parser():
   p = sub.add_parser("next-task", parents=[common],
                      help="Return the task to work on next.")
   p.add_argument("--track", required=True)
+  p.add_argument("--skip-verification", action="store_true",
+                 help="Defer verification tasks (for track-level autonomy);"
+                 " they are listed in deferred_verification_tasks.")
   p.set_defaults(func=cmd_next_task)
+
+  p = sub.add_parser("settings", parents=[common],
+                     help="Read execution settings from workflow.md.")
+  p.set_defaults(func=cmd_settings)
 
   p = sub.add_parser("set-task", parents=[common],
                      help="Change a task's status.")

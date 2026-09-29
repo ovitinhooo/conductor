@@ -166,7 +166,7 @@ Select and copy appropriate style guides from `assets/code_styleguides/` to the 
 Configure the operational rules for the project.
 
 1. **Mode Selection:** Ask the user to choose a mode using a **single-choice question** with options: **Default** or **Customize**.
-2. **Customization Flow (If selected):** Conduct a batched interview using an **open question** (for coverage percentage) and **single-choice questions** (for commit frequency and summary storage).
+2. **Customization Flow (If selected):** Conduct a batched interview using an **open question** (for coverage percentage) and **single-choice questions** (for commit frequency, summary storage, and the **Autonomy** level in the `Execution Settings` section: `step`, `phase` (Recommended: *pauses only for manual verification at the end of each phase*), or `track`).
 3. **Explain:** Before copying, explain that the `workflow.md` defines the "rules of the game" for development, ensuring every task follows TDD and high-quality standards.
 4. **Write Action:** Copy `assets/workflow.md` to `conductor/workflow.md` and apply user choices if customized.
 

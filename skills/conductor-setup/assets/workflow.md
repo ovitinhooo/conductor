@@ -12,6 +12,26 @@
 6.  **Non-Interactive & CI-Aware:** Prefer non-interactive commands. Use
     `CI=true` for watch-mode tools (tests, linters) to ensure single execution.
 
+## Execution Settings
+
+These settings control how Conductor runs this workflow during implementation.
+Change a value at any time; it applies from the next task on.
+
+-   **Autonomy:** `phase`
+    -   `step`: pause after every task so you can review it before the next
+        one starts.
+    -   `phase`: work through a whole phase without pausing, then stop for
+        the manual verification at the end of the phase.
+    -   `track`: work through the whole track. Automated tests and coverage
+        still run at the end of every phase, but the manual verification steps
+        of all phases are collected into one checklist that you confirm at the
+        end. Conductor still stops on failing tests, open decisions, and tech
+        stack deviations.
+-   **Delegation:** `auto`
+    -   `auto`: run each task in a fresh subagent when the agent host supports
+        it, so long tracks don't fill the main conversation's context.
+    -   `inline`: run every task in the main conversation.
+
 ## Task Workflow
 
 All tasks follow a strict lifecycle:

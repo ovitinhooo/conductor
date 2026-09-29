@@ -256,6 +256,23 @@ them.
 /conductor:conductor-implement
 ```
 
+**Execution settings.** The `Execution Settings` section of
+`conductor/workflow.md` controls how implementation runs:
+
+-   **Autonomy**: `step` pauses after every task, `phase` (default) pauses for
+    manual verification at the end of each phase, and `track` runs the whole
+    track and collects the manual verification of every phase into one
+    checklist at the end. Every level still stops on failing tests, open
+    decisions, and tech stack deviations, and a verification task is never
+    marked done without your explicit confirmation.
+-   **Delegation**: with `auto` (default), each task runs in a fresh
+    `conductor-task-executor` subagent when your agent supports subagents (e.g.,
+    Claude Code). The main conversation keeps only a short report per task, so
+    long tracks no longer exhaust its context. `inline` runs every task in the
+    main conversation.
+
+An interrupted session resumes from the task that was in progress.
+
 During implementation, you can also monitor, revert, or review work using the
 following commands:
 
@@ -353,6 +370,8 @@ corresponding Conductor protocol in the background:
 ## 📂 Repository Structure
 
 -   `/skills`: The protocol logic (`SKILL.md`) for each command.
+-   `/agents`: Subagents the skills delegate to (`conductor-task-executor`
+    runs one plan task in a fresh context).
 -   `/rules`: Platform-specific operational rules files.
 -   `/scripts`: Helper scripts the skills call. `conductor_state.py` performs
     deterministic reads and updates of Conductor's state files (tracks
