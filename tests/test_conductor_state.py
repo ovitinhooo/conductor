@@ -138,6 +138,27 @@ class ConductorStateTest(unittest.TestCase):
     self.assertEqual(task["text"], "Task: Remove defaced")
     self.assertIsNone(task["sha"])
 
+  def test_numbers_and_quoted_shas(self):
+    phases = state.parse_plan([
+        "## P\n",
+        "- [x] Task: Apply migration 20260315\n",
+        "- [x] Task: Numeric sha [1234567]\n",
+        "- [x] Task: Backticked `abcdef0123`\n",
+    ])
+    tasks = phases[0]["tasks"]
+    self.assertEqual((tasks[0]["text"], tasks[0]["sha"]),
+                     ("Task: Apply migration 20260315", None))
+    self.assertEqual(tasks[1]["sha"], "1234567")
+    self.assertEqual(tasks[2]["sha"], "abcdef0123")
+
+  def test_reset_keeps_numbers_that_are_not_shas(self):
+    track_id = self.make_track(
+        plan="## P\n- [x] Task: Apply migration 20260315\n")
+    self.ok("set-task", "--track", track_id, "--task", "1", "--state",
+            "pending")
+    self.assertIn("- [ ] Task: Apply migration 20260315\n",
+                  self.read("conductor/tracks/%s/plan.md" % track_id))
+
   def test_checkpoint_is_parsed_from_heading(self):
     phases = state.parse_plan(
         ["## Phase 1: Core [checkpoint: 89abcde]\n", "- [x] Task: A 1234567\n"]
@@ -258,6 +279,15 @@ class ConductorStateTest(unittest.TestCase):
     track_id = self.make_track()
     result = self.ok("status", "--track", "build the cli")
     self.assertEqual(result["track"]["id"], track_id)
+
+  def test_exact_description_beats_substring_matches(self):
+    self.make_track("auth_1")
+    self.write("conductor/tracks/auth_2/spec.md", "# Spec\n")
+    self.write("conductor/tracks/auth_2/plan.md", PLAN)
+    self.ok("register", "--id", "auth_2", "--description", "Build the CLI v2")
+    result = self.ok("status", "--track", "Build the CLI")
+    self.assertEqual(result["track"]["id"], "auth_1")
+    self.assertIn("ambiguous", self.fails("status", "--track", "build"))
 
   def test_archive_moves_track_and_removes_registry_entry(self):
     done = self.make_track("done_20260101", plan="## P\n- [x] Task: A 1234567\n")
@@ -418,6 +448,24 @@ class ConductorStateTest(unittest.TestCase):
     # The base branch itself is untouched.
     self.assertEqual(result["tracks"][0]["status"], "pending")
     self.assertEqual(result["tracks"][0]["progress"]["completed"], 3)
+
+  def test_branch_progress_when_project_is_in_a_subdirectory(self):
+    track_id = self.make_track()
+    self.init_git()
+    # Move the whole project into a subdirectory of the repository.
+    sub = os.path.join(self.root, "packages", "app")
+    os.makedirs(sub)
+    self.git("mv", "conductor", "packages/app/conductor")
+    self.git("commit", "-q", "-m", "move")
+    self.git("switch", "-q", "-c", "conductor/" + track_id)
+    self.run_cli_at(sub, "set-track", "--track", track_id, "--state",
+                    "in_progress")
+    self.git("commit", "-q", "-am", "progress")
+    self.git("switch", "-q", "main")
+    code, result = self.run_cli_at(sub, "branch-info", "--track", track_id)
+    self.assertEqual(code, 0)
+    self.assertEqual(result["branch_status"], "in_progress")
+    self.assertEqual(result["branch_progress"]["completed"], 3)
 
   def run_cli_at(self, root, *argv):
     out = io.StringIO()

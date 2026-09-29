@@ -89,11 +89,14 @@ CHECKBOX_RE = re.compile(
 )
 PHASE_RE = re.compile(r"^(?P<hashes>#{2,3})\s+(?P<title>.*?)\s*$")
 CHECKPOINT_RE = re.compile(r"\s*\[checkpoint:\s*(?P<sha>[0-9a-fA-F]{7,40})\]")
-# A recorded SHA is a trailing hex word; requiring a digit avoids mistaking an
-# ordinary word such as "defaced" for one.
+# A recorded SHA is the last word of a completed task. A bracketed or
+# backticked hex word always counts. A bare one must mix digits and letters, or
+# be exactly seven digits (the short SHA the workflow records), so ordinary
+# words ("defaced") and numbers such as dates ("20260315") are left alone.
 TRAILING_SHA_RE = re.compile(
-    r"^(?P<text>.*?)\s+[\[(`]?(?P<sha>(?=[0-9a-f]*[0-9])[0-9a-f]{7,40})[\])`]?"
-    r"\s*$"
+    r"^(?P<text>.*?)\s+(?:[\[(`](?P<quoted>[0-9a-f]{7,40})[\])`]"
+    r"|(?P<bare>(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}"
+    r"|[0-9]{7}))\s*$"
 )
 VERIFICATION_RE = re.compile(
     r"(phase\s+verification|manual\s+verification|verification\s*&\s*checkpoint)",
@@ -363,6 +366,9 @@ def find_track(project, query):
   if len(exact) == 1:
     return exact[0]
   q = query.lower()
+  named = [e for e in entries if e["description"].lower() == q]
+  if len(named) == 1:
+    return named[0]
   partial = [
       e for e in entries
       if (e["id"] and q in e["id"].lower()) or q in e["description"].lower()
@@ -430,7 +436,8 @@ def parse_plan(lines):
       if status == "completed":
         sha_match = TRAILING_SHA_RE.match(title)
         if sha_match:
-          title, sha = sha_match.group("text").strip(), sha_match.group("sha")
+          title = sha_match.group("text").strip()
+          sha = sha_match.group("quoted") or sha_match.group("bare")
       item = {"line": i, "status": status, "text": title, "sha": sha}
       if len(box.group("indent").expandtabs(4)) <= base or not tasks:
         task_index += 1
@@ -602,7 +609,9 @@ def branch_info(project, entry):
   }
   if exists and entry.get("dir"):
     registry_rel = _rel(project.root, project.registry_path)
-    registry = _git(project.root, "show", "%s:%s" % (branch, registry_rel))
+    # "./" makes git resolve the path from --root rather than from the top of
+    # the repository, which differs when the project lives in a subdirectory.
+    registry = _git(project.root, "show", "%s:./%s" % (branch, registry_rel))
     if registry is not None:
       for other in parse_registry(registry.splitlines(keepends=True)):
         if other["link"] and os.path.basename(
@@ -610,7 +619,7 @@ def branch_info(project, entry):
         ) == entry["id"]:
           info["branch_status"] = other["status"]
     plan_rel = _rel(project.root, track_files(entry["dir"])["plan"])
-    plan = _git(project.root, "show", "%s:%s" % (branch, plan_rel))
+    plan = _git(project.root, "show", "%s:./%s" % (branch, plan_rel))
     if plan is not None:
       phases = parse_plan(plan.splitlines(keepends=True))
       info["branch_progress"] = _counts([t for p in phases for t in p["tasks"]])
