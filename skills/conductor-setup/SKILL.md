@@ -47,7 +47,13 @@ Example (for a new project):
 
 ### 1.2 Audit Artifacts & Resumption Check
 
-Run the automated directory resumption script: `python3 scripts/resume.py`
+Run the automated directory resumption script, passing the project root (the current working directory) explicitly:
+
+```bash
+python3 <skill_dir>/scripts/resume.py "$(pwd)"
+```
+
+`<skill_dir>` is the directory containing this `SKILL.md`. The script lives there, while the artifacts it inspects live in the project root, so neither a bare `scripts/resume.py` (not found from the project root) nor running it from the skill directory (inspects the wrong folder) is correct.
 
 Read the returned JSON object from `stdout`. **Do NOT mention the script name or path to the user.**
 

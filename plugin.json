@@ -1,4 +1,5 @@
 {
   "name": "conductor",
+  "version": "0.4.1",
   "description": "Conductor Agent Skills"
 }

@@ -5,9 +5,16 @@ import os
 import sys
 
 
-def determine_resumption():
-  """Checks existing setup artifacts and returns the next unblocked step."""
-  conductor_dir = "conductor"
+def determine_resumption(project_root="."):
+  """Checks existing setup artifacts and returns the next unblocked step.
+
+  Args:
+    project_root: The project root that contains (or will contain) the
+      `conductor/` directory. Paths are resolved against it rather than the
+      current working directory, so the script gives the same answer no matter
+      where it is invoked from.
+  """
+  conductor_dir = os.path.join(project_root, "conductor")
   files = [
       "product.md",
       "product-guidelines.md",
@@ -49,6 +56,7 @@ def determine_resumption():
 
 
 if __name__ == "__main__":
-  result = determine_resumption()
+  root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+  result = determine_resumption(root)
   print(json.dumps(result, indent=2))
   sys.exit(0)

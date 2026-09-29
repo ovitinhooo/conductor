@@ -87,6 +87,35 @@ your Claude Code session:
 
 --------------------------------------------------------------------------------
 
+### 3. Pinning a Specific Version
+
+Installing from `main` tracks the latest commit. If you need reproducible
+installs (for audits, compliance, or a team-wide rollout), pin a release tag
+instead. Releases are tagged `conductor-v<version>`, and the version is recorded
+in both `VERSION` and `plugin.json`.
+
+*   **Claude Code:** append the tag to the marketplace source:
+
+    ```bash
+    /plugin marketplace add gemini-cli-extensions/conductor#conductor-v<version>
+    ```
+
+*   **Antigravity (or any local link):** clone at the tag, then link as in the
+    developer installation above:
+
+    ```bash
+    git clone --branch conductor-v<version> --depth 1 https://github.com/gemini-cli-extensions/conductor.git
+    ```
+
+*   **Git submodule:** check out the tag inside the submodule and commit the
+    submodule pointer:
+
+    ```bash
+    git -C path/to/conductor fetch --tags && git -C path/to/conductor checkout conductor-v<version>
+    ```
+
+--------------------------------------------------------------------------------
+
 ## 🔄 Uninstallation
 
 To safely remove Conductor from your environment:
