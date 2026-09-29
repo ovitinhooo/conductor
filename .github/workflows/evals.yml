@@ -1,0 +1,59 @@
+name: evals
+
+# Behavioral evals call the model, so they only run on demand.
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario to run (empty runs all; see evals/scenarios.json)"
+        required: false
+        default: ""
+      model:
+        description: "Model to evaluate (empty uses the CLI default)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run evals
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Set the ANTHROPIC_API_KEY repository secret to run evals."
+            exit 1
+          fi
+          args=(--output eval-results.json)
+          if [ -n "$SCENARIO" ]; then args+=(--scenario "$SCENARIO"); fi
+          if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+          python evals/run_evals.py "${args[@]}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: eval-results.json
+          if-no-files-found: ignore

@@ -1,5 +1,6 @@
 {
   "name": "conductor",
+  "description": "Conductor: Spec-Driven Development skills for AI coding agents.",
   "owner": {
     "name": "Conductor"
   },

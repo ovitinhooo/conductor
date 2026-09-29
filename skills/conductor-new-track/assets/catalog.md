@@ -13,7 +13,7 @@ Skills focused on setting up, managing, and using various Firebase services.
     API) into web applications. Covers setup, multimodal inference, structured
     output, and security.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-ai-logic-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-ai-logic-basics/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -24,7 +24,7 @@ Skills focused on setting up, managing, and using various Firebase services.
 -   **Description**: Deploy and manage web apps with Firebase App Hosting. Use
     this skill when deploying Next.js/Angular apps with backends.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-app-hosting-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-app-hosting-basics/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -36,7 +36,7 @@ Skills focused on setting up, managing, and using various Firebase services.
     this skill when the user's app requires user sign-in, user management, or
     secure data access using auth rules.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-auth-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-auth-basics/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -49,7 +49,7 @@ Skills focused on setting up, managing, and using various Firebase services.
     environment, using Firebase for the first time, or adding Firebase to their
     app.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-basics/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -61,7 +61,7 @@ Skills focused on setting up, managing, and using various Firebase services.
     PostgreSQL. Use for schema design, GraphQL queries/mutations, authorization,
     and SDK generation for web, Android, iOS, and Flutter apps.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-data-connect-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-data-connect-basics/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -74,7 +74,7 @@ Skills focused on setting up, managing, and using various Firebase services.
     needs help setting up Firestore, writing security rules, or using the
     Firestore SDK in their application.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-firestore-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-firestore/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -86,7 +86,7 @@ Skills focused on setting up, managing, and using various Firebase services.
     when you want to deploy static web apps, Single Page Apps (SPAs), or simple
     microservices. Do NOT use for Firebase App Hosting.
 -   **URL**:
-    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-hosting-basics/
+    https://raw.githubusercontent.com/firebase/agent-skills/main/skills/firebase-hosting-basics/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `firebase`, `firebase-admin`
@@ -103,7 +103,7 @@ on Google Cloud.
     designing and creating delivery pipelines to managing releases and debugging
     failures.
 -   **URL**:
-    https://raw.githubusercontent.com/gemini-cli-extensions/devops/main/skills/cloud-deploy-pipelines/
+    https://raw.githubusercontent.com/gemini-cli-extensions/cicd/refs/heads/main/skills/google-cicd-pipeline-design/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `skaffold`
@@ -115,7 +115,7 @@ on Google Cloud.
 -   **Description**: Assistant for deploying applications to Google Cloud,
     supporting Static Sites (GCS), Cloud Run (Buildpacks or Images), and GKE.
 -   **URL**:
-    https://raw.githubusercontent.com/gemini-cli-extensions/devops/main/skills/gcp-cicd-deploy/
+    https://raw.githubusercontent.com/gemini-cli-extensions/cicd/refs/heads/main/skills/google-cicd-deploy/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `gcloud`
@@ -128,7 +128,7 @@ on Google Cloud.
     pipelines on Google Cloud, focusing on architectural design and
     implementation planning.
 -   **URL**:
-    https://raw.githubusercontent.com/gemini-cli-extensions/devops/main/skills/gcp-cicd-design/
+    https://raw.githubusercontent.com/gemini-cli-extensions/cicd/refs/heads/main/skills/google-cicd-pipeline-design/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Keywords**: `CI/CD`, `Pipeline Design`, `Google Cloud`, `Architectural
@@ -140,7 +140,7 @@ on Google Cloud.
     Cloud Run, Cloud SQL) with standard GCS backend state management and IAM
     least-privilege.
 -   **URL**:
-    https://raw.githubusercontent.com/gemini-cli-extensions/devops/main/skills/gcp-cicd-terraform/
+    https://raw.githubusercontent.com/gemini-cli-extensions/cicd/refs/heads/main/skills/google-cicd-terraform/SKILL.md
 -   **Party**: 1p
 -   **Detection Signals**:
     -   **Dependencies**: `terraform`
