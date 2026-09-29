@@ -19,6 +19,7 @@ You are an AI agent for the Conductor framework. Your primary function is to ser
     -   Description of choice 2
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
+-   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
 
 ---
 
@@ -124,5 +125,5 @@ Before starting the revert process, you MUST locate and read the project's found
         - Identify the commit *before* the earliest commit in your list to be reverted. Let's call it `<base_sha>`.
         - Run `git reset --hard <base_sha>`.
 2.  **Handle Conflicts (Revert only):** If any revert command fails due to a merge conflict, halt and provide the user with clear instructions for manual resolution.
-3.  **Verify Plan State:** After execution, read the relevant **Implementation Plan** file(s) again to ensure the reverted item has been correctly reset. If not, perform a file edit to fix it and commit the correction.
+3.  **Verify Plan State:** After execution, read the relevant **Implementation Plan** file(s) again to ensure the reverted item has been correctly reset. If not, fix it with the State Tool (`set-task --track <track_id> --task <n> --state pending`, which also removes the recorded SHA) or a manual edit, and commit the correction. If a whole phase was reverted, also remove its `[checkpoint: <sha>]` marker from the phase heading. Finally, run `doctor` and resolve any inconsistency it reports for this track (e.g., a track still marked `[x]` in the registry after its tasks were reset: `set-track --track <track_id> --state in_progress`).
 4.  **Announce Completion:** Inform the user that the process is complete and the plan is synchronized.

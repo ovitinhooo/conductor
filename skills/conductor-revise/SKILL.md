@@ -19,6 +19,7 @@ You are the **Conductor Planner** in revision mode. Your goal is to amend an exi
     -   Description of choice 2
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
+-   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
 -   **History Preservation (CRITICAL):** Completed work is an audit trail. You MUST NOT uncheck, delete, reword, or reorder any completed task (`[x]`), its recorded commit SHA, or any phase heading carrying a `[checkpoint: <sha>]`. Changes that affect completed work are expressed as **new** pending tasks.
 -   **No Implementation:** This skill only edits planning artifacts. You MUST NOT modify application code or tests. Implementation happens afterwards through the `conductor-implement` skill.
 
@@ -108,8 +109,8 @@ If the change is large enough that it effectively redefines the track (for examp
 ## 6. Write and Record
 
 1.  **Write Files:** Write the approved `spec.md` and/or `plan.md` to the track directory.
-2.  **Update Metadata:** In the track's `metadata.json`, set `updated_at` to the current timestamp (ISO 8601). If the track was reopened from `[x]`, set its `status` to `"in_progress"`.
-3.  **Update Registry (Reopened Tracks Only):** If the track was complete, change its marker in the **Tracks Registry** from `[x]` to `[~]`.
+2.  **Update Metadata:** Refresh the track's `updated_at` with the State Tool's `touch --track <track_id>` (or set it manually to the current ISO 8601 timestamp in `metadata.json`).
+3.  **Reopen (Completed Tracks Only):** If the track was complete, run `set-track --track <track_id> --state in_progress`, which changes the registry marker from `[x]` to `[~]` and sets the metadata `status` to `"in_progress"` (or make both edits manually).
 4.  **Commit:** Stage the changed files and commit with the message `conductor(plan): Revise track '<track_id>'`, with a commit body that summarizes the revision in one to three lines.
 
 ---

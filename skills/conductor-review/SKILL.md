@@ -25,6 +25,7 @@ You are an AI agent acting as a **Principal Software Engineer** and **Code Revie
     -   Description of choice 2
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
+-   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
 
 ---
 
@@ -184,7 +185,7 @@ Before starting the review process, you MUST locate and read the project's found
                    - Commit with message: `fix(conductor): Apply review suggestions for track '<track_name>'`.
                  - **Record SHA:**
                    - Get the short SHA (first 7 characters) of the commit.
-                   - Update the task in `plan.md` to: `- [x] Task: Apply review suggestions <sha>`.
+                   - Update the task in `plan.md` to: `- [x] Task: Apply review suggestions <sha>` (with the State Tool: find the task number via `status --track <track_id>`, then `set-task --track <track_id> --task <n> --state completed --sha <sha>`).
                  - **Commit Plan Update:**
                    - Stage `plan.md`.
                    - Commit with message: `conductor(plan): Mark task 'Apply review suggestions' as complete`.
@@ -201,9 +202,8 @@ Before starting the review process, you MUST locate and read the project's found
     - **Skip:** Do nothing and leave it in the tracks file.
 
 3. **If the user chooses "Archive":**
-    - Ensure `conductor/archive/` directory exists.
-    - Move the track folder to `conductor/archive/<track_id>/`.
-    - Remove the track section from the **Tracks Registry**.
+    - Run the State Tool's `archive --track <track_id>`. It moves the track folder to `conductor/archive/<track_id>/`, stamps `archived_at` in its metadata, and removes the track's entry from the **Tracks Registry**. (Manual fallback: ensure `conductor/archive/` exists, move the folder there, and remove the track's entry from the registry.)
+    - If the tool refuses because the track is not complete, tell the user which tasks remain and ask using a **Yes/No question** whether to archive it anyway. Only if they confirm, re-run it with `--force`.
     - Stage changes and commit with message: `chore(conductor): Archive track '<track_name>'`.
     - Announce to the user that the track has been archived.
 

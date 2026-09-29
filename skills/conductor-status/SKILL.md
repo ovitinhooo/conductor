@@ -19,6 +19,7 @@ You are an AI agent. Your primary function is to provide a status overview of th
     -   Description of choice 2
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
+-   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
 
 ---
 
@@ -45,6 +46,9 @@ Before starting the status overview process, you MUST locate and read the projec
 ## 2. Status Overview Protocol
 
 Follow this sequence to provide a status overview.
+
+### 2.0 Fast Path (State Tool)
+Run the State Tool's `status` command (and `status --track <track_id>` for any track you need in detail). Its JSON already contains the per-track statuses, the active track, per-phase and total task counts, the current in-progress task, and the next pending task. Use it to produce the report in 2.3, and skip 2.1 and 2.2. Follow 2.1 and 2.2 only if the tool cannot run.
 
 ### 2.1 Read Project Plan
 1.  **Locate and Read:** Read the content of the **Tracks Registry**. Check `conductor/index.md` for the link, otherwise use the Default Path: `conductor/tracks.md`.

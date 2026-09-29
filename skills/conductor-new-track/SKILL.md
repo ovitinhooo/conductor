@@ -20,6 +20,7 @@ You are the **Conductor Planner**. Your goal is to guide the user through defini
     -   Description of choice 2
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
+-   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
 
 ## 1. Handshake & Context Initialization
 
@@ -165,31 +166,41 @@ Adhere to this sequence precisely.
 
 1.  **Strategic Action:** Explain that you are about to "commit the track to history." This involves creating a dedicated workspace for the track, initializing its metadata, and updating the central registry so that your progress is trackable by any tool or collaborator.
 
-2.  **Resolve Tracks Path:**
-    -   Identify the tracks directory and registry using the links provided in `conductor/index.md`.
-    -   **Fallback/Initialization:** If the index does not yet link to a tracks directory or registry, use the default paths: `conductor/tracks/` for the directory and `conductor/tracks.md` for the registry.
-    -   **Collision Check:** List existing track directories in the resolved path. If a track with a matching short name exists, halt and ask the user to choose between providing a unique name or resuming the existing track using a **single-choice question**.
+2.  **Generate Track ID:** Derive a short name from the track description (a few words) and run the State Tool's `new-id --short-name "<short name>"`. It returns a unique id in the form `shortname_YYYYMMDD` (suffixed if it would collide with an existing or archived track) and the track's directory path.
+    -   **Collision Check:** Before generating the id, check the `tracks` command output (or list the tracks directory) for a track that covers the same work. If one exists, halt and ask the user to choose between providing a unique name or resuming the existing track using a **single-choice question**.
 
-3.  **Generate Track ID & Directory:**
-    -   Create a unique Track ID (e.g., `shortname_YYYYMMDD`).
-    -   Create the track's workspace at `conductor/tracks/<track_id>/`.
+3.  **Write Track Documents:** Create the track directory returned in step 2 and write the confirmed `spec.md` and `plan.md` into it.
 
-4.  **Write Track Artifacts:**
-    -   **Metadata:** Create `metadata.json` with the track ID, type, status ("new"), and timestamps.
-    -   **Documents:** Write the confirmed `spec.md` and `plan.md` to the track directory.
-    -   **Track Handshake:** Create `conductor/tracks/<track_id>/index.md` linking to the local spec, plan, and metadata.
+4.  **Register the Track:** Run the State Tool's `register --id <track_id> --description "<Track Description>" --type <type>`. In one step it:
+    -   creates `metadata.json` (track id, type, status `"new"`, description, and timestamps),
+    -   creates the track's `index.md` linking to the spec, plan, and metadata,
+    -   appends the track entry to the **Tracks Registry** (creating the registry if this is the first track), with a link relative to the registry file,
+    -   adds a `## Tracks` section to `conductor/index.md` if it does not link to the registry yet.
+    Report any `warnings` it returns.
 
-5.  **Update Tracks Registry:**
-    -   Open the **Tracks Registry** file (resolved via `conductor/index.md`).
-    -   Append the new track entry at the end of the file. Create the file if this is the first track.
-    -   Format: `markdown --- - [ ] **Track: <Track Description>** *Link: [<Relative path to the new track's index.md>](<Relative path to the new track's index.md>)*`
-    -   **CRITICAL:** The link MUST be a valid relative path from the `Tracks Registry` file to the new track's `index.md` file.
+5.  **Manual Fallback (only if the State Tool cannot run):**
+    -   Resolve the tracks directory and registry using the links in `conductor/index.md`, falling back to `conductor/tracks/` and `conductor/tracks.md`.
+    -   Create a unique Track ID (e.g., `shortname_YYYYMMDD`) and the directory `conductor/tracks/<track_id>/`.
+    -   Create `metadata.json` with the track ID, type, status (`"new"`), description, and `created_at`/`updated_at` timestamps, plus the `spec.md` and `plan.md`, and an `index.md` linking to all three.
+    -   Append the track entry at the end of the **Tracks Registry** (create the file if this is the first track). The link MUST be a valid relative path from the registry file to the track's `index.md`:
 
-6.  **Register Tracks in Handshake:**
-    -   You MUST ensure that the project's primary source of truth (`conductor/index.md`) points to the tracks infrastructure.
-    -   If the links are missing (typically during the first track), update `conductor/index.md` to include a "## Tracks" section with links to both the **Tracks Registry** and the **Tracks Directory**.
-    -   **Example Addition:** `markdown ## Tracks - [Tracks Registry](./tracks.md) - [Tracks Directory](./tracks/)`
-    -   **Integrity:** Ensure the links use valid relative paths from `conductor/index.md`.
+        ```markdown
+        ---
+
+        - [ ] **Track: <Track Description>**
+        *Link: [./tracks/<track_id>/index.md](./tracks/<track_id>/index.md)*
+        ```
+
+    -   If `conductor/index.md` does not link to the tracks infrastructure yet (typically during the first track), append:
+
+        ```markdown
+        ## Tracks
+
+        -   [Tracks Registry](./tracks.md)
+        -   [Tracks Directory](./tracks/)
+        ```
+
+6.  **Verify:** Run the State Tool's `doctor` and fix any error it reports for the new track before committing.
 
 7.  **Finalize Changes:**
     -   Stage the entire `conductor/` directory.

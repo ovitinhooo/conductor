@@ -354,6 +354,11 @@ corresponding Conductor protocol in the background:
 
 -   `/skills`: The protocol logic (`SKILL.md`) for each command.
 -   `/rules`: Platform-specific operational rules files.
+-   `/scripts`: Helper scripts the skills call. `conductor_state.py` performs
+    deterministic reads and updates of Conductor's state files (tracks
+    registry, plans, metadata) and runs health checks (`doctor`).
+-   `/tests`: Unit tests for the helper scripts (`python3 -m unittest discover
+    -s tests`).
 
 --------------------------------------------------------------------------------
 
