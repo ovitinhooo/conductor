@@ -13,6 +13,7 @@ Usage:
   python3 conductor_state.py <command> [options] --root <project_root>
 
 Commands:
+  locate           Resolve which directory holds Conductor's files.
   doctor           Check the Conductor directory for missing or inconsistent
                    state.
   tracks           List tracks in the registry with their progress.
@@ -40,6 +41,11 @@ import shutil
 import sys
 
 DEFAULT_CONDUCTOR_DIR = "conductor"
+# Locations probed, in order, for an initialized Conductor directory. A custom
+# location outside this list can be set with the CONDUCTOR_DIR environment
+# variable or the --conductor-dir option.
+CANDIDATE_DIRS = ("conductor", ".conductor", ".agents/conductor")
+CONDUCTOR_DIR_ENV = "CONDUCTOR_DIR"
 CORE_FILES = {
     "product.md": "Product Definition",
     "product-guidelines.md": "Product Guidelines",
@@ -167,12 +173,40 @@ def _dump_json(path, data):
 # ---------------------------------------------------------------------------
 
 
+def resolve_conductor_dir(root, override=None):
+  """Finds the Conductor directory for a project root.
+
+  Precedence: an explicit override, then the CONDUCTOR_DIR environment
+  variable, then the first candidate directory that contains an index.md, then
+  the first candidate directory that exists (a partial setup), and finally the
+  default `conductor/`.
+
+  Returns:
+    A tuple (absolute path, source) where source is one of "option", "env",
+    "detected", "partial", or "default".
+  """
+  for value, source in ((override, "option"),
+                        (os.environ.get(CONDUCTOR_DIR_ENV), "env")):
+    if value:
+      return os.path.normpath(os.path.join(root, value)), source
+  for candidate in CANDIDATE_DIRS:
+    path = os.path.join(root, *candidate.split("/"))
+    if os.path.isfile(os.path.join(path, "index.md")):
+      return path, "detected"
+  for candidate in CANDIDATE_DIRS:
+    path = os.path.join(root, *candidate.split("/"))
+    if os.path.isdir(path):
+      return path, "partial"
+  return os.path.join(root, DEFAULT_CONDUCTOR_DIR), "default"
+
+
 class Project:
   """Resolves the locations of Conductor's files for one project root."""
 
-  def __init__(self, root):
+  def __init__(self, root, conductor_dir=None):
     self.root = os.path.abspath(root)
-    self.conductor_dir = os.path.join(self.root, DEFAULT_CONDUCTOR_DIR)
+    self.conductor_dir, self.source = resolve_conductor_dir(self.root,
+                                                            conductor_dir)
     self.index_path = os.path.join(self.conductor_dir, "index.md")
     self._index_links = None
 
@@ -884,6 +918,27 @@ def cmd_touch(project, args):
   return {"track": entry["id"], "updated_at": data["updated_at"]}
 
 
+def cmd_locate(project, _args):
+  initialized = [
+      c for c in CANDIDATE_DIRS
+      if os.path.isfile(os.path.join(project.root, *c.split("/"), "index.md"))
+  ]
+  result = {
+      "conductor_dir": _rel(project.root, project.conductor_dir),
+      "source": project.source,
+      "initialized": os.path.isfile(project.index_path),
+      "candidates": list(CANDIDATE_DIRS),
+  }
+  if len(initialized) > 1:
+    result["warnings"] = [
+        "Several Conductor directories are initialized (%s); using '%s'. Remove"
+        " the stale ones or set %s." % (", ".join(initialized),
+                                        result["conductor_dir"],
+                                        CONDUCTOR_DIR_ENV)
+    ]
+  return result
+
+
 def cmd_doctor(project, args):
   errors, warnings = [], []
 
@@ -900,6 +955,8 @@ def cmd_doctor(project, args):
     return _doctor_result(project, errors, warnings, [])
   if not os.path.isfile(project.index_path):
     issue(errors, "missing_index", "index.md not found.", project.index_path)
+  for warning in cmd_locate(project, args).get("warnings", []):
+    issue(warnings, "multiple_conductor_dirs", warning)
   for name in CORE_FILES:
     path = project.core_file(name)
     if not os.path.isfile(path):
@@ -1026,10 +1083,20 @@ def build_parser():
       "--root", default=os.getcwd(),
       help="Project root that contains the Conductor directory (default: cwd).",
   )
+  common.add_argument(
+      "--conductor-dir",
+      help="Conductor directory relative to the root. Defaults to $%s, then"
+      " the first initialized of: %s." % (CONDUCTOR_DIR_ENV,
+                                         ", ".join(CANDIDATE_DIRS)),
+  )
   parser = argparse.ArgumentParser(
       description="Deterministic reads and updates of Conductor state."
   )
   sub = parser.add_subparsers(dest="command", required=True)
+
+  p = sub.add_parser("locate", parents=[common],
+                     help="Resolve the Conductor directory.")
+  p.set_defaults(func=cmd_locate)
 
   p = sub.add_parser("doctor", parents=[common],
                      help="Check Conductor state for problems.")
@@ -1113,7 +1180,7 @@ def build_parser():
 
 def main(argv=None):
   args = build_parser().parse_args(argv)
-  project = Project(args.root)
+  project = Project(args.root, args.conductor_dir)
   try:
     result = args.func(project, args)
   except StateError as e:

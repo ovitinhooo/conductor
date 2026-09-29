@@ -211,6 +211,13 @@ components or features by you or anyone on your team.
 /conductor:conductor-setup
 ```
 
+**Where Conductor keeps its files.** Setup asks where to create the Conductor
+directory: `conductor/` (default), `.conductor/`, or `.agents/conductor/` (to
+keep AI tooling together under `.agents/`). Every skill detects these three
+locations automatically, so no configuration is needed; paths in this README
+use the default. For any other location, set the `CONDUCTOR_DIR` environment
+variable (relative to the project root) in every session.
+
 ### 2. Start a New Track (Feature or Bug)
 
 When you’re ready to take on a new feature or bug fix, run

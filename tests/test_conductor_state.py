@@ -8,6 +8,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 _SCRIPT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -53,6 +54,10 @@ class ConductorStateTest(unittest.TestCase):
   def setUp(self):
     self.root = tempfile.mkdtemp()
     self.addCleanup(shutil.rmtree, self.root)
+    env = mock.patch.dict(os.environ)
+    env.start()
+    self.addCleanup(env.stop)
+    os.environ.pop(state.CONDUCTOR_DIR_ENV, None)
     self.cdir = os.path.join(self.root, "conductor")
     os.makedirs(self.cdir)
     self.write("conductor/index.md", INDEX)
@@ -312,6 +317,49 @@ class ConductorStateTest(unittest.TestCase):
     self.assertEqual(result["settings"]["autonomy"], "track")
     self.assertEqual(result["settings"]["delegation"], "auto")
     self.assertIn("delegation=bogus", result["warnings"][0])
+
+  # Directory resolution -----------------------------------------------------
+
+  def move_conductor_dir(self, rel):
+    target = os.path.join(self.root, rel)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.move(self.cdir, target)
+    self.cdir = target
+
+  def test_locate_default_directory(self):
+    result = self.ok("locate")
+    self.assertEqual(result["conductor_dir"], "conductor")
+    self.assertEqual(result["source"], "detected")
+    self.assertTrue(result["initialized"])
+
+  def test_locate_detects_agents_directory_and_tracks_work_there(self):
+    self.move_conductor_dir(".agents/conductor")
+    result = self.ok("locate")
+    self.assertEqual(result["conductor_dir"], ".agents/conductor")
+    self.write(".agents/conductor/tracks/t1/spec.md", "# Spec\n")
+    self.write(".agents/conductor/tracks/t1/plan.md", PLAN)
+    self.ok("register", "--id", "t1", "--description", "Hidden")
+    self.assertIn("(./tracks/t1/index.md)",
+                  self.read(".agents/conductor/tracks.md"))
+    self.assertTrue(self.ok("doctor")["healthy"])
+    self.assertFalse(os.path.exists(os.path.join(self.root, "conductor")))
+
+  def test_locate_env_and_option_override_detection(self):
+    self.move_conductor_dir("docs/ai/conductor")
+    self.assertEqual(self.ok("locate")["source"], "default")
+    os.environ[state.CONDUCTOR_DIR_ENV] = "docs/ai/conductor"
+    result = self.ok("locate")
+    self.assertEqual((result["conductor_dir"], result["source"]),
+                     ("docs/ai/conductor", "env"))
+    result = self.ok("locate", "--conductor-dir", ".conductor")
+    self.assertEqual((result["conductor_dir"], result["source"]),
+                     (".conductor", "option"))
+
+  def test_locate_warns_about_multiple_initialized_directories(self):
+    self.write(".conductor/index.md", INDEX)
+    result = self.ok("locate")
+    self.assertEqual(result["conductor_dir"], "conductor")
+    self.assertIn(".conductor", result["warnings"][0])
 
   # Doctor ------------------------------------------------------------------
 

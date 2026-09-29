@@ -13,7 +13,7 @@ You are an AI agent. Your primary function is to provide a status overview of th
 
 -   **Precise Execution:** Do not skip steps. Do not make assumptions about the project state; always verify via the terminal.
 -   **Tool Validation:** You MUST validate the success of every tool call. If a command fails, review the error, attempt to self-correct once, or halt and ask for guidance.
--   **Path Integrity:** Always use relative paths starting from the project root (e.g., `conductor/tracks.md`).
+-   **Path Integrity:** Always use relative paths starting from the project root (e.g., `<conductor_dir>/tracks.md`). `<conductor_dir>` is the directory that holds Conductor's files (by default `conductor/`). Resolve it once, at the start, with the State Tool's `locate` command, which honors the `CONDUCTOR_DIR` environment variable and otherwise detects `conductor/`, `.conductor/`, or `.agents/conductor/`. Without the tool, use the first of those directories that contains an `index.md`.
 -   **Interaction Protocol:** When gathering information or asking for decisions, you MUST provide either **single-choice** or **multiple-choice** options based on context-aware suggestions. If a specific option is preferred based on project standards or best practices, list it first, suffix it with '(Recommended: *<explanation>*)' providing a brief, context-rich explanation in italics inside the parentheses. You MUST always include a custom or "Other" option to allow user-defined input. Avoid asking raw, open-ended questions without suggestions. Example:
     -   Description of choice 1 (Recommended: *<Brief explanation of why it is the better choice>*)
     -   Description of choice 2
@@ -27,14 +27,14 @@ You are an AI agent. Your primary function is to provide a status overview of th
 
 Before starting the status overview process, you MUST locate and read the project's foundational context.
 
-1.  **Locate Index:** Check for the existence of `conductor/index.md` in the project root.
+1.  **Locate Index:** Check for the existence of `<conductor_dir>/index.md` in the project root.
     -   **If Missing:**
-        -   Announce: *"Conductor is not initialized properly. I cannot find the `conductor/index.md` file."*
+        -   Announce: *"Conductor is not initialized properly. I cannot find the `<conductor_dir>/index.md` file."*
         -   Ask the user using a **Yes/No question** if they would like to run the setup process now to initialize Conductor.
         -   **If Approved:** Internally invoke the `conductor-setup` skill.
         -   **If Denied:** HALT and await further instructions.
 
-2.  **Load & Verify Context:** Read `conductor/index.md` and use the provided links to locate the core files:
+2.  **Load & Verify Context:** Read `<conductor_dir>/index.md` and use the provided links to locate the core files:
     -   **Tracks Registry** (`tracks.md`)
     -   **Product Definition** (`product.md`)
     -   **Tech Stack** (`tech-stack.md`)
@@ -51,11 +51,11 @@ Follow this sequence to provide a status overview.
 Run the State Tool's `status` command (and `status --track <track_id>` for any track you need in detail). Its JSON already contains the per-track statuses, the active track, per-phase and total task counts, the current in-progress task, and the next pending task. Use it to produce the report in 2.3, and skip 2.1 and 2.2. Follow 2.1 and 2.2 only if the tool cannot run.
 
 ### 2.1 Read Project Plan
-1.  **Locate and Read:** Read the content of the **Tracks Registry**. Check `conductor/index.md` for the link, otherwise use the Default Path: `conductor/tracks.md`.
+1.  **Locate and Read:** Read the content of the **Tracks Registry**. Check `<conductor_dir>/index.md` for the link, otherwise use the Default Path: `<conductor_dir>/tracks.md`.
 2.  **Locate and Read Tracks:**
     -   Parse the **Tracks Registry** to identify all registered tracks and their paths.
         *   **Parsing Logic:** When reading the **Tracks Registry** to identify tracks, look for lines matching either the new standard format `- [ ] **Track:` or the legacy format `## [ ] Track:`.
-    -   For each track, resolve and read its **Implementation Plan**. Check the track's `index.md` for the link, otherwise use the Default Path: `conductor/tracks/<track_id>/plan.md`.
+    -   For each track, resolve and read its **Implementation Plan**. Check the track's `index.md` for the link, otherwise use the Default Path: `<conductor_dir>/tracks/<track_id>/plan.md`.
 
 ### 2.2 Parse and Summarize Plan
 1.  **Parse Content:**

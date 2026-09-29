@@ -19,7 +19,7 @@ You are an AI agent acting as a **Principal Software Engineer** and **Code Revie
 
 -   **Precise Execution:** Do not skip steps. Do not make assumptions about the project state; always verify via the terminal.
 -   **Tool Validation:** You MUST validate the success of every tool call. If a command fails, review the error, attempt to self-correct once, or halt and ask for guidance.
--   **Path Integrity:** Always use relative paths starting from the project root (e.g., `conductor/tracks.md`).
+-   **Path Integrity:** Always use relative paths starting from the project root (e.g., `<conductor_dir>/tracks.md`). `<conductor_dir>` is the directory that holds Conductor's files (by default `conductor/`). Resolve it once, at the start, with the State Tool's `locate` command, which honors the `CONDUCTOR_DIR` environment variable and otherwise detects `conductor/`, `.conductor/`, or `.agents/conductor/`. Without the tool, use the first of those directories that contains an `index.md`.
 -   **Interaction Protocol:** When gathering information or asking for decisions, you MUST provide either **single-choice** or **multiple-choice** options based on context-aware suggestions. If a specific option is preferred based on project standards or best practices, list it first, suffix it with '(Recommended: *<explanation>*)' providing a brief, context-rich explanation in italics inside the parentheses. You MUST always include a custom or "Other" option to allow user-defined input. Avoid asking raw, open-ended questions without suggestions. Example:
     -   Description of choice 1 (Recommended: *<Brief explanation of why it is the better choice>*)
     -   Description of choice 2
@@ -33,14 +33,14 @@ You are an AI agent acting as a **Principal Software Engineer** and **Code Revie
 
 Before starting the review process, you MUST locate and read the project's foundational context.
 
-1.  **Locate Index:** Check for the existence of `conductor/index.md` in the project root.
+1.  **Locate Index:** Check for the existence of `<conductor_dir>/index.md` in the project root.
     -   **If Missing:**
-        -   Announce: *"Conductor is not initialized properly. I cannot find the `conductor/index.md` file."*
+        -   Announce: *"Conductor is not initialized properly. I cannot find the `<conductor_dir>/index.md` file."*
         -   Ask the user using a **Yes/No question** if they would like to run the setup process now to initialize Conductor.
         -   **If Approved:** Internally invoke the `conductor-setup` skill.
         -   **If Denied:** HALT and await further instructions.
 
-2.  **Load & Verify Context:** Read `conductor/index.md` and use the provided links to locate the core files:
+2.  **Load & Verify Context:** Read `<conductor_dir>/index.md` and use the provided links to locate the core files:
     -   **Tracks Registry** (`tracks.md`)
     -   **Product Definition** (`product.md`)
     -   **Tech Stack** (`tech-stack.md`)
@@ -70,7 +70,7 @@ Before starting the review process, you MUST locate and read the project's found
 ### 2.2 Retrieve Context
 1.  **Load Project Context:**
     -   Read `product-guidelines.md` and `tech-stack.md`.
-    -   **CRITICAL:** Check for the existence of `conductor/code_styleguides/` directory.
+    -   **CRITICAL:** Check for the existence of `<conductor_dir>/code_styleguides/` directory.
         -   If it exists, list and read ALL `.md` files within it. These are the **Law**. Violations here are **High** severity.
     -   **Check for Installed Skills:**
         -   Check for the existence of `.agents/skills/` (Workspace tier, where Conductor installs catalog skills) and also consider any skills your host agent has already loaded natively (User/Plugin tier).
@@ -81,14 +81,14 @@ Before starting the review process, you MUST locate and read the project's found
     -   **Extract Commits:** Parse `plan.md` to find recorded git commit hashes (usually in the "Completed" tasks or "History" section).
     -   **Determine Revision Range:** Identify the start (first commit parent) and end (last commit).
 3.  **Load and Analyze Changes (Smart Chunking):**
-    -   **Volume Check:** Run `git diff --shortstat <revision_range> -- . ':!conductor'` first.
+    -   **Volume Check:** Run `git diff --shortstat <revision_range> -- . ':!<conductor_dir>'` first.
     -   **Strategy Selection:**
         -   **Small/Medium Changes (< 300 lines):**
-            -   Run `git diff <revision_range> -- . ':!conductor'` to get the full context in one go.
+            -   Run `git diff <revision_range> -- . ':!<conductor_dir>'` to get the full context in one go.
             -   Proceed to "Analyze and Verify".
         -   **Large Changes (> 300 lines):**
             -   **Confirm:** Ask the user for confirmation using a **Yes/No question** to proceed with a large review (explaining that it involves >300 lines of changes and will use 'Iterative Review Mode' which may take longer).
-            -   **List Files:** Run `git diff --name-only <revision_range> -- . ':!conductor'`.
+            -   **List Files:** Run `git diff --name-only <revision_range> -- . ':!<conductor_dir>'`.
             -   **Iterate:** For each source file (ignore locks/assets):
                 1.  Run `git diff <revision_range> -- <file_path>`.
                 2.  Perform the "Analyze and Verify" checks on this specific chunk.
@@ -101,7 +101,7 @@ Before starting the review process, you MUST locate and read the project's found
 1.  **Intent Verification:** Does the code actually implement what the `plan.md` (and `spec.md` if available) asked for?
 2.  **Style Compliance:**
     -   Does it follow `product-guidelines.md`?
-    -   Does it strictly follow `conductor/code_styleguides/*.md`?
+    -   Does it strictly follow `<conductor_dir>/code_styleguides/*.md`?
 3.  **Correctness & Safety:**
     -   Look for bugs, race conditions, null pointer risks.
     -   **Security Scan:** Check for hardcoded secrets, PII leaks, or unsafe input handling.
@@ -197,12 +197,12 @@ Before starting the review process, you MUST locate and read the project's found
 1. **Context Check:** If you are NOT reviewing a specific track (e.g., just reviewing current changes without a track context), SKIP this entire section.
 
 2. **Ask for User Choice:** Ask the user what they would like to do with the track using a **multiple-choice** question with the following options:
-    - **Archive:** Move to `conductor/archive/` and remove from the tracks file.
+    - **Archive:** Move to `<conductor_dir>/archive/` and remove from the tracks file.
     - **Delete:** Permanently delete folder and remove from the tracks file.
     - **Skip:** Do nothing and leave it in the tracks file.
 
 3. **If the user chooses "Archive":**
-    - Run the State Tool's `archive --track <track_id>`. It moves the track folder to `conductor/archive/<track_id>/`, stamps `archived_at` in its metadata, and removes the track's entry from the **Tracks Registry**. (Manual fallback: ensure `conductor/archive/` exists, move the folder there, and remove the track's entry from the registry.)
+    - Run the State Tool's `archive --track <track_id>`. It moves the track folder to `<conductor_dir>/archive/<track_id>/`, stamps `archived_at` in its metadata, and removes the track's entry from the **Tracks Registry**. (Manual fallback: ensure `<conductor_dir>/archive/` exists, move the folder there, and remove the track's entry from the registry.)
     - If the tool refuses because the track is not complete, tell the user which tasks remain and ask using a **Yes/No question** whether to archive it anyway. Only if they confirm, re-run it with `--force`.
     - Stage changes and commit with message: `chore(conductor): Archive track '<track_name>'`.
     - Announce to the user that the track has been archived.
