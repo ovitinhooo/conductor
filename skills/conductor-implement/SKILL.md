@@ -20,6 +20,7 @@ You are the **Conductor Implementer**. Your goal is to execute the tasks defined
     -   Other (User-defined input)
 -   **Sequential Questioning (CRITICAL):** When gathering information or asking the user questions, if a native tool is available to present multiple questions for structured answering (e.g., a modal or form tool), you may use it to group questions. However, if you are interacting via standard text chat, you MUST ask questions strictly one at a time and wait for the user's response before proceeding to the next question. Do NOT output multiple questions in a single chat response.
 -   **State Tool:** Conductor ships a helper that reads and updates its state files deterministically. Run it from the project root as `python3 <plugin_root>/scripts/conductor_state.py <command> --root <project_root>`, where `<plugin_root>` is `${CLAUDE_PLUGIN_ROOT}` if your host substituted it with a real path above, and otherwise the directory two levels above this skill's directory (the one containing `plugin.json`). It prints JSON, with `"ok": false` and an `error` message on failure. Prefer it over parsing or editing `tracks.md`, `plan.md`, and `metadata.json` by hand. If it cannot run (for example, Python 3 is unavailable), perform the equivalent reads and edits manually, following the file formats described in this document. Do not mention the helper by name to the user.
+-   **Durable Preferences:** If the user states a lasting preference about how work should be done (e.g., *"always use pnpm"*, *"keep commits small"*), ask using a **Yes/No question** whether Conductor should remember it for future tracks. If yes, record it with the State Tool's `add-note --section preferences --text "<preference>"` and commit it: `docs(conductor): Remember working preference`.
 
 ---
 
@@ -83,6 +84,7 @@ Adhere to this sequence to execute the selected track.
     -   If you fail to read any of these files, halt and inform the user.
     -   Check for installed skills in `.agents/skills/` (Workspace tier, where Conductor installs catalog skills) and any skills your host agent has already loaded natively.
     -   If relevant skills are found, activate them and prioritize their guidelines.
+    -   **Recall Project Learnings:** Run the State Tool's `recall --query "<track description>"` (manual fallback: read `<conductor_dir>/learnings.md` if it exists). Treat its `preferences` and `conventions` like the style guides. For each match, read its `learnings.md` (at most three) and keep the pitfalls and decisions that apply to this track in mind. If there is no learnings file yet, skip this step.
 
 3.  **Determine Execution Settings:** Read the **Execution Settings** from the **Workflow** with the State Tool's `settings` command (or read the `## Execution Settings` section manually). If the workflow has no such section (it predates these settings), use the defaults below without asking.
     -   **Autonomy** (default `phase`): `step` pauses after every task; `phase` pauses only for the manual verification at the end of each phase; `track` defers the manual verification of every phase to a single checklist at the end of the track.
@@ -114,7 +116,7 @@ Adhere to this sequence to execute the selected track.
     c.  **Mark In Progress:** `set-task --track <track_id> --task <n> --state in_progress`.
 
     d.  **Execute the Task:**
-        -   **Delegated Mode:** Dispatch the `conductor-task-executor` agent with a brief containing: the track id; the task number, text, and sub-tasks; the paths to `spec.md`, `plan.md`, `workflow.md`, `tech-stack.md`, `product-guidelines.md`, and `code_styleguides/`; the relevant installed skills; one-line summaries of the tasks already completed in this track; and any user decisions that affect the task. Pass paths, not file contents. Dispatch one task at a time, in plan order: tasks in a plan build on each other, so never run them in parallel. Then act on the JSON report the agent returns:
+        -   **Delegated Mode:** Dispatch the `conductor-task-executor` agent with a brief containing: the track id; the task number, text, and sub-tasks; the paths to `spec.md`, `plan.md`, `workflow.md`, `tech-stack.md`, `product-guidelines.md`, and `code_styleguides/`; the relevant installed skills; one-line summaries of the tasks already completed in this track; any user decisions that affect the task; and, as short bullets, the Working Preferences, Conventions, and past-track pitfalls from Project Learnings that apply to it. Pass paths, not file contents. Dispatch one task at a time, in plan order: tasks in a plan build on each other, so never run them in parallel. Then act on the JSON report the agent returns:
             -   `completed`: verify the reported commit exists (e.g., `git cat-file -t <sha>`) and that the reported tests passed. If either check fails, treat the report as `failed`.
             -   `needs_decision`: put its `question` to the user as a **single-choice question**, then dispatch the task again with the answer added to the brief. If the answer changes the spec or the plan, use the `conductor-revise` skill first.
             -   `blocked` or `failed`: summarize the problem and ask the user using a **single-choice question**: **Retry** with their guidance (dispatch again), **Take over** (execute this task inline), **Revise the plan** (use the `conductor-revise` skill), or **Stop** (leave the task in progress).
@@ -188,7 +190,50 @@ Adhere to this sequence to update project-level documentation based on the compl
 
 ---
 
-## 5. Completion and Handoff
+## 5. Capture Learnings
+
+Record what this track taught so future tracks start from it instead of rediscovering it.
+
+1.  **Execution Trigger:** Run this section only for a track that reached `[x]`, after the documentation synchronization.
+2.  **Gather:** Collect what is not obvious from the code alone: the spec's `Assumptions` and `Revision History`, `Rework:` and `Follow-up Fixes` tasks in the plan, the `deviations` and `follow_ups` from task reports (Delegated Mode), decisions the user made during the track, problems that needed several attempts, and the track's commit messages and git notes.
+3.  **Draft:** Draft the track's `learnings.md` (next to its `spec.md`) with this structure, keeping it short (about 30 lines) and omitting empty sections. Record only what would help a future track; do not restate the spec or the plan.
+
+    ```markdown
+    # Learnings: <Track Description>
+
+    **Track:** <track_id> · **Type:** <type> · **Completed:** <YYYY-MM-DD>
+
+    ## Summary
+    <What was delivered, in two or three sentences.>
+
+    ## Decisions
+    - <Decision> (<why; alternatives considered>)
+
+    ## Pitfalls
+    - <What went wrong or was surprising, and how to avoid it>
+
+    ## Reusable Patterns
+    - <Code, files, or approaches future tracks should reuse, with paths>
+
+    ## Follow-ups
+    - <Work deliberately left for later>
+    ```
+
+4.  **Propose Durable Notes:** From the draft, propose at most three **Conventions** (rules future work should follow that are not in the style guides yet, e.g., *"All CLI errors go through `errors.fail()`"*) and any **Working Preferences** the user expressed during the track.
+5.  **Confirm:** Present the draft and the proposed notes, then ask using a **single-choice question**:
+    -   **Approve** (Recommended: *keeps this knowledge available to future tracks*)
+    -   **Edit** (describe changes, then redraft)
+    -   **Skip** (record nothing)
+6.  **Record:** On approval:
+    -   Write the track's `learnings.md`.
+    -   Index it with the State Tool's `remember --track <track_id> --summary "<one line>" --tags "<3-6 keywords: domain, components, technologies>"`. This creates `<conductor_dir>/learnings.md` on first use and links it from `<conductor_dir>/index.md`.
+    -   Record each approved note with `add-note --section conventions --text "<convention>"` or `add-note --section preferences --text "<preference>"`.
+    -   Stage the changes and commit: `docs(conductor): Record learnings for track '<track_id>'`.
+    -   **Manual fallback:** append a line `- **<track_id>** (<YYYY-MM-DD>): <summary> | tags: <tags> | [learnings](./tracks/<track_id>/learnings.md)` under `## Track Index` in `<conductor_dir>/learnings.md` (creating the file with `## Working Preferences`, `## Conventions`, and `## Track Index` sections), and add the notes as bullets under their sections.
+
+---
+
+## 6. Completion and Handoff
 
 Once the track is marked as complete and project documentation is synchronized, announce the final state.
 
@@ -200,7 +245,7 @@ Once the track is marked as complete and project documentation is synchronized, 
 4.  **Track Cleanup (only when the review was declined):** The review skill ends with the same cleanup step, so a completed track is always handled the same way. Ask the user what to do with the completed track using a **single-choice question**:
     -   **Archive** (Recommended: *keeps the registry focused on open work while preserving the spec, plan, and history*): run the State Tool's `archive --track <track_id>`, which moves the track folder to `<conductor_dir>/archive/<track_id>/` and removes its registry entry. Stage the changes and commit: `chore(conductor): Archive track '<track_description>'`.
     -   **Keep:** leave the track in the registry, marked `[x]`.
-5.  **Integrate the Track Branch (Isolation `branch` or `worktree` only):** Once the track is complete, documentation is synchronized, and any review and cleanup are done (Sections 4 and 5), ask the user how to integrate `conductor/<track_id>` into the recorded base branch using a **single-choice question**:
+5.  **Integrate the Track Branch (Isolation `branch` or `worktree` only):** Once the track is complete, documentation is synchronized, learnings are captured, and any review and cleanup are done (Sections 4 to 6), ask the user how to integrate `conductor/<track_id>` into the recorded base branch using a **single-choice question**:
     -   **Open a pull request** (Recommended when the repository has a remote: *the change gets reviewed like any other*): push with `git push -u origin conductor/<track_id>`, then open the pull request with the tools you have (e.g., the `gh` CLI), or give the user the URL to open it.
     -   **Merge locally:** in the original checkout (not the worktree), switch to the base branch and run `git merge --no-ff conductor/<track_id>`. On conflicts, stop and give the user clear instructions to resolve them. Do not force anything.
     -   **Keep the branch:** leave it for later.

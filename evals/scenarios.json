@@ -6,14 +6,38 @@
       "fixture": "empty",
       "prompt": "/conductor:conductor-setup\n\nThis is a new project: a dependency-free Python library that converts temperatures between Celsius, Fahrenheit and Kelvin. Use Autogenerate mode everywhere, the default workflow, and skip the optional agent skills.",
       "assertions": [
-        {"type": "file_exists", "path": "conductor/index.md"},
-        {"type": "file_exists", "path": "conductor/product.md"},
-        {"type": "file_exists", "path": "conductor/product-guidelines.md"},
-        {"type": "file_exists", "path": "conductor/tech-stack.md"},
-        {"type": "file_exists", "path": "conductor/code_styleguides"},
-        {"type": "file_contains", "path": "conductor/workflow.md", "text": "## Execution Settings"},
-        {"type": "doctor_no_errors"},
-        {"type": "git_log_contains", "text": "conductor(setup)"}
+        {
+          "type": "file_exists",
+          "path": "conductor/index.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "conductor/product.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "conductor/product-guidelines.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "conductor/tech-stack.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "conductor/code_styleguides"
+        },
+        {
+          "type": "file_contains",
+          "path": "conductor/workflow.md",
+          "text": "## Execution Settings"
+        },
+        {
+          "type": "doctor_no_errors"
+        },
+        {
+          "type": "git_log_contains",
+          "text": "conductor(setup)"
+        }
       ]
     },
     {
@@ -22,11 +46,54 @@
       "fixture": "initialized",
       "prompt": "/conductor:conductor-new-track \"Add c_to_f(celsius) to tempconv that returns Fahrenheit and raises TypeError for non-numeric input\"\n\nUse Autogenerate mode for the spec, no reference documents, and do not start implementing.",
       "assertions": [
-        {"type": "track_count", "count": 1},
-        {"type": "min_tasks", "count": 2},
-        {"type": "doctor_no_errors"},
-        {"type": "git_log_contains", "text": "initialize track"},
-        {"type": "no_files_outside", "prefix": "conductor/"}
+        {
+          "type": "track_count",
+          "count": 1
+        },
+        {
+          "type": "min_tasks",
+          "count": 2
+        },
+        {
+          "type": "doctor_no_errors"
+        },
+        {
+          "type": "git_log_contains",
+          "text": "initialize track"
+        },
+        {
+          "type": "no_files_outside",
+          "prefix": "conductor/"
+        }
+      ]
+    },
+    {
+      "name": "new-track-recalls-learnings",
+      "description": "New track recalls an archived track's learnings and cites them in the spec.",
+      "fixture": "with_learnings",
+      "prompt": "/conductor:conductor-new-track \"Add f_to_c(fahrenheit) to tempconv that returns Celsius and rejects invalid input\"\n\nUse Autogenerate mode for the spec, no reference documents, and do not start implementing.",
+      "assertions": [
+        {
+          "type": "track_count",
+          "count": 1
+        },
+        {
+          "type": "any_track_file_contains",
+          "file": "spec.md",
+          "text": "Related Past Work"
+        },
+        {
+          "type": "any_track_file_contains",
+          "file": "spec.md",
+          "text": "c_to_f_20251201"
+        },
+        {
+          "type": "no_files_outside",
+          "prefix": "conductor/"
+        },
+        {
+          "type": "doctor_no_errors"
+        }
       ]
     },
     {
@@ -35,26 +102,68 @@
       "fixture": "with_track",
       "prompt": "/conductor:conductor-implement celsius_20260101",
       "assertions": [
-        {"type": "task_status", "task": 1, "status": "completed", "has_sha": true},
-        {"type": "task_status", "task": 2, "status": "completed", "has_sha": true},
-        {"type": "task_status", "task": 3, "status": "pending"},
-        {"type": "file_exists", "path": "tests/test_tempconv.py"},
-        {"type": "doctor_no_errors"}
+        {
+          "type": "task_status",
+          "task": 1,
+          "status": "completed",
+          "has_sha": true
+        },
+        {
+          "type": "task_status",
+          "task": 2,
+          "status": "completed",
+          "has_sha": true
+        },
+        {
+          "type": "task_status",
+          "task": 3,
+          "status": "pending"
+        },
+        {
+          "type": "file_exists",
+          "path": "tests/test_tempconv.py"
+        },
+        {
+          "type": "doctor_no_errors"
+        }
       ]
     },
     {
       "name": "revise-preserves-history",
       "description": "Revise adds scope without rewriting completed tasks and records a revision.",
       "fixture": "with_progress",
-      "snapshot": ["conductor/tracks/celsius_20260101/plan.md"],
+      "snapshot": [
+        "conductor/tracks/celsius_20260101/plan.md"
+      ],
       "prompt": "/conductor:conductor-revise celsius_20260101 \"Also add k_to_c(kelvin) that rejects values below absolute zero with ValueError\"",
       "assertions": [
-        {"type": "lines_unchanged", "path": "conductor/tracks/celsius_20260101/plan.md", "marker": "[x]"},
-        {"type": "task_status", "task": 1, "status": "completed", "has_sha": true},
-        {"type": "file_contains", "path": "conductor/tracks/celsius_20260101/spec.md", "text": "Revision History"},
-        {"type": "min_pending_tasks", "count": 3},
-        {"type": "git_log_contains", "text": "Revise track"},
-        {"type": "doctor_no_errors"}
+        {
+          "type": "lines_unchanged",
+          "path": "conductor/tracks/celsius_20260101/plan.md",
+          "marker": "[x]"
+        },
+        {
+          "type": "task_status",
+          "task": 1,
+          "status": "completed",
+          "has_sha": true
+        },
+        {
+          "type": "file_contains",
+          "path": "conductor/tracks/celsius_20260101/spec.md",
+          "text": "Revision History"
+        },
+        {
+          "type": "min_pending_tasks",
+          "count": 3
+        },
+        {
+          "type": "git_log_contains",
+          "text": "Revise track"
+        },
+        {
+          "type": "doctor_no_errors"
+        }
       ]
     },
     {
@@ -63,8 +172,13 @@
       "fixture": "with_progress",
       "prompt": "/conductor:conductor-status",
       "assertions": [
-        {"type": "tree_unchanged"},
-        {"type": "output_contains", "text": "%"}
+        {
+          "type": "tree_unchanged"
+        },
+        {
+          "type": "output_contains",
+          "text": "%"
+        }
       ]
     }
   ]

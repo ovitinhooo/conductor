@@ -63,6 +63,25 @@ class EvalHarnessTest(unittest.TestCase):
     self.assert_check(root, {"type": "tree_unchanged"}, context,
                       expected=False)
 
+  def test_learnings_fixture_is_recallable(self):
+    root, context = self.make("with_learnings")
+    self.assert_check(root, {"type": "doctor_no_errors"}, context)
+    self.assert_check(root, {"type": "track_count", "count": 0}, context)
+    recall = run_evals._state(root, "recall", "--query",
+                              "Fahrenheit to Celsius conversion validation")
+    self.assertEqual([m["id"] for m in recall["matches"]],
+                     [run_evals.PAST_TRACK_ID])
+    self.assertEqual(len(recall["conventions"]), 1)
+
+  def test_any_track_file_contains(self):
+    root, context = self.make("with_track")
+    self.assert_check(root, {"type": "any_track_file_contains",
+                             "file": "spec.md", "text": "Out of Scope"},
+                      context)
+    self.assert_check(root, {"type": "any_track_file_contains",
+                             "file": "spec.md", "text": "Related Past Work"},
+                      context, expected=False)
+
   def test_no_files_outside_prefix(self):
     root, context = self.make("initialized")
     run_evals._write(root, "conductor/tracks/x/spec.md", "# Spec\n")

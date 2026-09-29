@@ -143,6 +143,10 @@ To safely remove Conductor from your environment:
     (Greenfield) and existing (Brownfield) projects.
 -   **Smart revert**: A git-aware revert command that understands logical units
     of work (tracks, phases, tasks) rather than just commit hashes.
+-   **Memory between tracks**: Each finished track leaves short learnings
+    (decisions, pitfalls, reusable patterns) that later tracks recall
+    automatically, together with the team's working preferences and
+    conventions.
 
 --------------------------------------------------------------------------------
 
@@ -258,6 +262,8 @@ them.
 -   `conductor/tracks.md` (Status updates)
 -   `conductor/tracks/<track_id>/plan.md` (Status updates)
 -   Project context files (Synchronized on completion)
+-   `conductor/tracks/<track_id>/learnings.md` and `conductor/learnings.md`
+    (Captured on completion, see below)
 
 ```bash
 /conductor:conductor-implement
@@ -287,6 +293,23 @@ them.
     reports the progress recorded on each track branch.
 
 An interrupted session resumes from the task that was in progress.
+
+**Memory between tracks.** When a track is complete, Conductor drafts a short
+`learnings.md` for it (key decisions, pitfalls, reusable patterns, and
+follow-ups) and, once you approve it, indexes it in `conductor/learnings.md`
+with a one-line summary and tags. That file also keeps two lists you can edit
+by hand:
+
+-   **Working Preferences**: how the team wants agents to work (e.g., *"keep
+    commits small"*). Conductor offers to add one whenever you state a lasting
+    preference.
+-   **Conventions**: rules learned in past tracks that are not in the style
+    guides yet. The review proposes new ones when it sees the same issue
+    repeatedly.
+
+New tracks and implementations recall the most relevant past learnings
+(including archived tracks) and follow the preferences and conventions, so a
+pitfall found once is planned for the next time instead of being rediscovered.
 
 During implementation, you can also monitor, revert, or review work using the
 following commands:

@@ -177,11 +177,46 @@ class CToFTest(unittest.TestCase):
   _commit(root, "conductor(plan): Mark task 'Write failing tests' as complete")
 
 
+PAST_TRACK_ID = "c_to_f_20251201"
+PAST_LEARNINGS = """# Learnings: Convert Celsius to Fahrenheit
+
+**Track:** c_to_f_20251201 · **Type:** feature · **Completed:** 2025-12-01
+
+## Pitfalls
+- `isinstance(True, int)` is true: conversion functions must reject booleans
+  explicitly, or `c_to_f(True)` silently returns 33.8.
+
+## Reusable Patterns
+- Input validation lives in `tempconv/_validate.py` (`require_number`).
+"""
+
+
+def fixture_with_learnings(root):
+  """An initialized project whose archived first track left learnings."""
+  fixture_initialized(root)
+  track_dir = "conductor/tracks/%s" % PAST_TRACK_ID
+  _write(root, track_dir + "/spec.md", SPEC)
+  _write(root, track_dir + "/plan.md",
+         "## Phase 1\n- [x] Task: Implement c_to_f 1a2b3c4\n")
+  _state(root, "register", "--id", PAST_TRACK_ID, "--description",
+         TRACK_DESCRIPTION, "--type", "feature")
+  _write(root, track_dir + "/learnings.md", PAST_LEARNINGS)
+  _state(root, "remember", "--track", PAST_TRACK_ID, "--summary",
+         "c_to_f with input validation", "--tags",
+         "temperature,conversion,validation")
+  _state(root, "add-note", "--section", "conventions", "--text",
+         "Validate numeric input with tempconv._validate.require_number")
+  _state(root, "set-track", "--track", PAST_TRACK_ID, "--state", "completed")
+  _state(root, "archive", "--track", PAST_TRACK_ID)
+  _commit(root, "chore(conductor): Archive track '%s'" % PAST_TRACK_ID)
+
+
 FIXTURES = {
     "empty": fixture_empty,
     "initialized": fixture_initialized,
     "with_track": fixture_with_track,
     "with_progress": fixture_with_progress,
+    "with_learnings": fixture_with_learnings,
 }
 
 
@@ -262,6 +297,14 @@ def check(root, assertion, context):
                     root).stdout.split()
     outside = [p for p in changed if not p.startswith(assertion["prefix"])]
     return not outside, "outside %s: %s" % (assertion["prefix"], outside)
+  if kind == "any_track_file_contains":
+    tracks = _state(root, "tracks").get("tracks", [])
+    for track in tracks:
+      text = _read(root, "%s/%s" % (track["path"], assertion["file"])) or ""
+      if assertion["text"] in text:
+        return True, "%s/%s" % (track["path"], assertion["file"])
+    return False, "no track %s contains %r" % (assertion["file"],
+                                              assertion["text"])
   if kind == "output_contains":
     return assertion["text"] in context["output"], assertion["text"]
   raise ValueError("Unknown assertion type: %s" % kind)

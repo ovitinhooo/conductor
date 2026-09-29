@@ -15,6 +15,7 @@ The orchestrator's message gives you:
 -   Paths to the track's `spec.md` and `plan.md`, the project's `workflow.md`, `tech-stack.md`, `product-guidelines.md`, and the `code_styleguides/` directory.
 -   Any installed agent skills that are relevant.
 -   Short summaries of the tasks completed before this one, and any decisions the user made that affect this task.
+-   Relevant **Project Learnings**: Working Preferences, Conventions, and pitfalls recorded by past tracks. Follow preferences and conventions as you would the style guides, and avoid the recorded pitfalls.
 
 If any required path is missing or unreadable, stop and report `blocked`.
 

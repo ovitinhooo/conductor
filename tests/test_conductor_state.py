@@ -473,6 +473,94 @@ class ConductorStateTest(unittest.TestCase):
       code = state.main(list(argv) + ["--root", root])
     return code, json.loads(out.getvalue())
 
+  # Learnings -----------------------------------------------------------------
+
+  def write_learnings(self, track_id, text, base="tracks"):
+    return self.write("conductor/%s/%s/learnings.md" % (base, track_id), text)
+
+  def test_remember_requires_track_learnings(self):
+    track_id = self.make_track()
+    self.assertIn("learnings.md",
+                  self.fails("remember", "--track", track_id, "--summary", "x"))
+
+  def test_remember_creates_file_indexes_track_and_links_it(self):
+    track_id = self.make_track()
+    self.write_learnings(track_id, "# Learnings\n\n## Pitfalls\n- Argparse"
+                         " exits on errors; catch SystemExit in tests.\n")
+    result = self.ok("remember", "--track", track_id, "--summary",
+                     "CLI entry point | parser", "--tags", "CLI, argparse")
+    self.assertFalse(result["updated"])
+    text = self.read("conductor/learnings.md")
+    self.assertIn("## Working Preferences", text)
+    self.assertIn("- **%s** (" % track_id, text)
+    self.assertIn("CLI entry point / parser | tags: argparse, cli", text)
+    self.assertIn("[learnings](./tracks/%s/learnings.md)" % track_id, text)
+    self.assertIn("[Project Learnings](./learnings.md)",
+                  self.read("conductor/index.md"))
+    self.assertIn("[Learnings](./learnings.md)",
+                  self.read("conductor/tracks/%s/index.md" % track_id))
+
+    # Remembering again replaces the entry instead of duplicating it.
+    result = self.ok("remember", "--track", track_id, "--summary", "Updated")
+    self.assertTrue(result["updated"])
+    text = self.read("conductor/learnings.md")
+    self.assertEqual(text.count("- **%s**" % track_id), 1)
+    self.assertIn("Updated", text)
+
+  def test_add_note_appends_once_to_the_right_section(self):
+    self.ok("add-note", "--section", "conventions", "--text",
+            "Validate inputs at the CLI boundary")
+    result = self.ok("add-note", "--section", "conventions", "--text",
+                     "validate inputs at the CLI boundary")
+    self.assertFalse(result["added"])
+    self.ok("add-note", "--section", "preferences", "--text",
+            "Keep commits small")
+    self.ok("add-note", "--section", "preferences", "--text",
+            "**Never** push to main")
+    self.assertFalse(self.ok("add-note", "--section", "preferences", "--text",
+                             "**Never** push to main")["added"])
+    text = self.read("conductor/learnings.md")
+    conventions = text.index("## Conventions")
+    index = text.index("## Track Index")
+    note = text.index("- Validate inputs")
+    self.assertTrue(conventions < note < index)
+    self.assertLess(text.index("- Keep commits small"), conventions)
+
+  def test_recall_ranks_matches_and_follows_archived_tracks(self):
+    cli = self.make_track("cli_1", plan="## P\n- [x] Task: A 1234567\n")
+    self.write_learnings(cli, "## Pitfalls\n- Argparse exits on errors.\n")
+    self.ok("remember", "--track", cli, "--summary", "Command line parser",
+            "--tags", "cli,argparse")
+    web = self.make_track("web_2")
+    self.write_learnings(web, "## Decisions\n- Flask for the dashboard.\n")
+    self.ok("remember", "--track", web, "--summary", "Web dashboard",
+            "--tags", "web,flask")
+    self.ok("add-note", "--section", "conventions", "--text", "Use pathlib")
+
+    self.ok("set-track", "--track", cli, "--state", "completed")
+    self.ok("archive", "--track", cli)
+    self.assertIn("[learnings](./archive/cli_1/learnings.md)",
+                  self.read("conductor/learnings.md"))
+
+    result = self.ok("recall", "--query", "Add subcommands to the CLI parser")
+    self.assertEqual([m["id"] for m in result["matches"]], ["cli_1"])
+    self.assertEqual(result["matches"][0]["learnings"],
+                     "conductor/archive/cli_1/learnings.md")
+    self.assertEqual(result["conventions"], ["Use pathlib"])
+    self.assertTrue(self.ok("doctor")["healthy"])
+
+  def test_recall_without_learnings_file(self):
+    result = self.ok("recall", "--query", "anything")
+    self.assertEqual(result["matches"], [])
+    self.assertIsNone(result["learnings_file"])
+
+  def test_doctor_reports_learnings_for_missing_track(self):
+    self.write("conductor/learnings.md",
+               state.LEARNINGS_TEMPLATE + "- **gone** (2026-01-01): Old |"
+               " [learnings](./tracks/gone/learnings.md)\n")
+    codes = {w["code"] for w in self.ok("doctor")["warnings"]}
+    self.assertIn("missing_learnings", codes)
+
   # Doctor ------------------------------------------------------------------
 
   def test_doctor_healthy_project(self):

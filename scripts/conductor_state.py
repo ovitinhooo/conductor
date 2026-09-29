@@ -31,6 +31,9 @@ Commands:
   register         Create a track's metadata/index files and registry entry.
   archive          Move a track to the archive and remove it from the registry.
   touch            Refresh a track's `updated_at` timestamp.
+  remember         Index a track's learnings.md in the project learnings file.
+  add-note         Add a working preference or convention to project learnings.
+  recall           Find past tracks whose learnings match a query.
 
 Exit codes: 0 on success, 1 on a reported error, 2 on invalid usage.
 """
@@ -116,6 +119,31 @@ SETTINGS = {
     "delegation": ("auto", ("auto", "inline")),
     "isolation": ("none", ("none", "branch", "worktree")),
 }
+LEARNINGS_FILE = "learnings.md"
+LEARNINGS_TEMPLATE = (
+    "# Project Learnings\n\n"
+    "Knowledge Conductor carries from one track to the next. Keep entries"
+    " short; the details live in each track's `learnings.md`.\n\n"
+    "## Working Preferences\n\n"
+    "<!-- How the team wants agents to work, e.g. \"Keep commits small\". -->\n\n"
+    "## Conventions\n\n"
+    "<!-- Rules learned in past tracks that are not in the style guides yet."
+    " -->\n\n"
+    "## Track Index\n\n"
+    "<!-- One line per completed track, maintained by Conductor. -->\n"
+)
+LEARNINGS_SECTIONS = {
+    "preferences": "Working Preferences",
+    "conventions": "Conventions",
+    "index": "Track Index",
+}
+INDEX_ENTRY_RE = re.compile(r"^- \*\*(?P<id>[^*]+)\*\*(?P<rest>.*)$")
+WORD_RE = re.compile(r"[a-z0-9][a-z0-9_+#.-]*[a-z0-9+#]|[a-z0-9]")
+STOPWORDS = frozenset(
+    "a an and are as at be by for from has have in into is it its of on or"
+    " that the this to was were will with add adds added use using new make"
+    " should must when then than via not but all any can".split()
+)
 TRACK_BRANCH_PREFIX = "conductor/"
 WORKTREES_DIR = ".worktrees"
 
@@ -340,6 +368,7 @@ def load_tracks(project):
 def track_files(track_dir):
   """Resolves spec/plan/metadata paths, honoring links in the track index."""
   files = {
+      "learnings": os.path.join(track_dir, LEARNINGS_FILE),
       "index": os.path.join(track_dir, "index.md"),
       "spec": os.path.join(track_dir, "spec.md"),
       "plan": os.path.join(track_dir, "plan.md"),
@@ -996,6 +1025,7 @@ def cmd_archive(project, args):
   shutil.move(entry["dir"], destination)
   lines = _read_lines(project.registry_path)
   _write_lines(project.registry_path, _remove_registry_entry(lines, entry))
+  _relink_learnings(project, entry["id"], destination)
   return {
       "track": entry["id"],
       "archived_to": _rel(project.root, destination),
@@ -1028,6 +1058,253 @@ def cmd_touch(project, args):
   entry = find_track(project, args.track)
   data = update_metadata(entry["dir"])
   return {"track": entry["id"], "updated_at": data["updated_at"]}
+
+
+# ---------------------------------------------------------------------------
+# Learnings (memory between tracks)
+# ---------------------------------------------------------------------------
+
+
+def _learnings_path(project):
+  return project.index_links().get(
+      LEARNINGS_FILE, os.path.join(project.conductor_dir, LEARNINGS_FILE)
+  )
+
+
+def _load_learnings(project, create=False):
+  path = _learnings_path(project)
+  if not os.path.isfile(path):
+    if not create:
+      return path, []
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write_lines(path, [LEARNINGS_TEMPLATE])
+    _ensure_index_link(project, "Memory", "Project Learnings",
+                       _rel(project.conductor_dir, path))
+  return path, _read_lines(path)
+
+
+def _ensure_index_link(project, section, label, target):
+  """Adds `- [label](./target)` under `## section` in index.md if missing."""
+  if not os.path.isfile(project.index_path):
+    return False
+  lines = _read_lines(project.index_path)
+  if "(./%s)" % target in "".join(lines):
+    return False
+  eol = _eol(lines)
+  if lines and not lines[-1].endswith(("\n", "\r")):
+    lines[-1] += eol
+  lines += [eol, "## %s" % section, eol, eol,
+            "-   [%s](./%s)%s" % (label, target, eol)]
+  _write_lines(project.index_path, lines)
+  project._index_links = None
+  return True
+
+
+def _section_bounds(lines, title):
+  """Returns (start, end) line indexes of a `## title` section's body."""
+  start = None
+  for i, raw in enumerate(lines):
+    text = _strip_eol(raw).strip()
+    if start is None and re.match(r"^##\s+%s\s*$" % re.escape(title), text,
+                                  re.IGNORECASE):
+      start = i + 1
+    elif start is not None and text.startswith("## "):
+      return start, i
+  if start is None:
+    return None
+  return start, len(lines)
+
+
+def _append_to_section(lines, title, new_lines):
+  """Appends lines at the end of a section, creating it if needed."""
+  eol = _eol(lines)
+  if lines and not lines[-1].endswith(("\n", "\r")):
+    lines[-1] += eol
+  bounds = _section_bounds(lines, title)
+  if bounds is None:
+    return lines + [eol, "## %s" % title, eol, eol] + new_lines
+  start, end = bounds
+  insert = end
+  while insert > start and not _strip_eol(lines[insert - 1]).strip():
+    insert -= 1
+  block = list(new_lines)
+  if end < len(lines):
+    block.append(eol)
+  return lines[:insert] + block + lines[end:]
+
+
+def _clean(text):
+  return " ".join(text.replace("|", "/").split())
+
+
+def _parse_index_entries(lines):
+  entries = []
+  bounds = _section_bounds(lines, LEARNINGS_SECTIONS["index"])
+  if bounds is None:
+    return entries
+  for i in range(*bounds):
+    match = INDEX_ENTRY_RE.match(_strip_eol(lines[i]))
+    if not match:
+      continue
+    parts = [p.strip() for p in match.group("rest").split(" | ")]
+    head = parts[0]
+    date_match = re.match(r"^\s*\((?P<date>[^)]*)\):\s*(?P<summary>.*)$", head)
+    entry = {
+        "line": i,
+        "id": match.group("id").strip(),
+        "date": date_match.group("date") if date_match else None,
+        "summary": date_match.group("summary") if date_match else head,
+        "tags": [],
+        "link": None,
+    }
+    for part in parts[1:]:
+      if part.startswith("tags:"):
+        entry["tags"] = [t.strip() for t in part[5:].split(",") if t.strip()]
+      else:
+        link = LINK_RE.search(part)
+        if link:
+          entry["link"] = link.group(1)
+    entries.append(entry)
+  return entries
+
+
+def _find_learnings_file(project, track_id):
+  for base in (project.tracks_dir, project.archive_dir):
+    path = os.path.join(base, track_id, LEARNINGS_FILE)
+    if os.path.isfile(path):
+      return path
+  return None
+
+
+def _relink_learnings(project, track_id, track_dir):
+  """Points a track's index entry at its current learnings.md location."""
+  path, lines = _load_learnings(project)
+  if not lines:
+    return
+  target = "./" + _rel(os.path.dirname(path),
+                       os.path.join(track_dir, LEARNINGS_FILE))
+  for entry in _parse_index_entries(lines):
+    if entry["id"] == track_id and entry["link"] and entry["link"] != target:
+      lines[entry["line"]] = lines[entry["line"]].replace(
+          "(%s)" % entry["link"], "(%s)" % target)
+      _write_lines(path, lines)
+
+
+def cmd_remember(project, args):
+  entry = find_track(project, args.track)
+  files = track_files(entry["dir"])
+  if not os.path.isfile(files["learnings"]):
+    raise StateError(
+        "Write %s before indexing it."
+        % _rel(project.root, files["learnings"])
+    )
+  path, lines = _load_learnings(project, create=True)
+  tags = sorted({_clean(t).lower() for t in (args.tags or "").split(",")
+                 if t.strip()})
+  link = "./" + _rel(os.path.dirname(path), files["learnings"])
+  line = "- **%s** (%s): %s" % (entry["id"],
+                                datetime.date.today().isoformat(),
+                                _clean(args.summary))
+  if tags:
+    line += " | tags: %s" % ", ".join(tags)
+  line += " | [learnings](%s)" % link
+  eol = _eol(lines)
+  existing = [e for e in _parse_index_entries(lines) if e["id"] == entry["id"]]
+  if existing:
+    lines[existing[0]["line"]] = line + eol
+  else:
+    lines = _append_to_section(lines, LEARNINGS_SECTIONS["index"],
+                               [line + eol])
+  _write_lines(path, lines)
+
+  if os.path.isfile(files["index"]):
+    index_lines = _read_lines(files["index"])
+    if LEARNINGS_FILE not in "".join(index_lines):
+      if index_lines and not index_lines[-1].endswith(("\n", "\r")):
+        index_lines[-1] += _eol(index_lines)
+      index_lines.append("- [Learnings](./%s)%s" % (LEARNINGS_FILE,
+                                                   _eol(index_lines)))
+      _write_lines(files["index"], index_lines)
+  update_metadata(entry["dir"])
+  return {
+      "track": entry["id"],
+      "learnings": _rel(project.root, path),
+      "entry": line,
+      "updated": bool(existing),
+  }
+
+
+def cmd_add_note(project, args):
+  text = _clean(args.text)
+  if not text:
+    raise StateError("The note is empty.")
+  path, lines = _load_learnings(project, create=True)
+  title = LEARNINGS_SECTIONS[args.section]
+  bounds = _section_bounds(lines, title)
+  if bounds is not None:
+    for i in range(*bounds):
+      existing = re.sub(r"^[-*]\s+", "", _strip_eol(lines[i]).strip())
+      if existing.lower() == text.lower():
+        return {"learnings": _rel(project.root, path), "added": False}
+  lines = _append_to_section(lines, title, ["- %s%s" % (text, _eol(lines))])
+  _write_lines(path, lines)
+  return {"learnings": _rel(project.root, path), "added": True}
+
+
+def _words(text):
+  return [w for w in WORD_RE.findall(text.lower())
+          if w not in STOPWORDS and len(w) > 2]
+
+
+def _section_items(lines, title):
+  bounds = _section_bounds(lines, title)
+  if bounds is None:
+    return []
+  items = []
+  for i in range(*bounds):
+    text = _strip_eol(lines[i]).strip()
+    if text.startswith(("- ", "* ")):
+      items.append(text[2:].strip())
+  return items
+
+
+def cmd_recall(project, args):
+  path, lines = _load_learnings(project)
+  query = set(_words(args.query))
+  results = []
+  for entry in _parse_index_entries(lines):
+    learnings = _find_learnings_file(project, entry["id"])
+    content = ""
+    if learnings:
+      with open(learnings, encoding="utf-8") as f:
+        content = f.read()
+    tag_words = set(_words(" ".join(entry["tags"])))
+    summary_words = set(_words(entry["summary"]))
+    content_words = set(_words(content))
+    matched = sorted(query & (tag_words | summary_words | content_words))
+    # Tags and the summary are curated, so they outweigh words that merely
+    # appear somewhere in a (possibly long) learnings file.
+    score = (3 * len(query & tag_words) + 2 * len(query & summary_words)
+             + min(len(query & content_words), 5))
+    if score <= 0:
+      continue
+    results.append({
+        "id": entry["id"],
+        "date": entry["date"],
+        "summary": entry["summary"],
+        "tags": entry["tags"],
+        "score": score,
+        "matched": matched,
+        "learnings": _rel(project.root, learnings) if learnings else None,
+    })
+  results.sort(key=lambda r: r["date"] or "", reverse=True)  # newest first
+  results.sort(key=lambda r: r["score"], reverse=True)  # stable: best first
+  return {
+      "learnings_file": _rel(project.root, path) if lines else None,
+      "preferences": _section_items(lines, LEARNINGS_SECTIONS["preferences"]),
+      "conventions": _section_items(lines, LEARNINGS_SECTIONS["conventions"]),
+      "matches": results[:args.limit],
+  }
 
 
 def cmd_locate(project, _args):
@@ -1081,6 +1358,7 @@ def cmd_doctor(project, args):
     issue(warnings, "missing_registry",
           "Tracks registry not found (no tracks created yet).",
           project.registry_path)
+    _check_learnings(project, args, issue, warnings, fixed)
     return _doctor_result(project, errors, warnings, fixed)
 
   entries, _ = load_tracks(project)
@@ -1162,6 +1440,8 @@ def cmd_doctor(project, args):
               "Track directory '%s' is not listed in the registry." % name,
               path)
 
+  _check_learnings(project, args, issue, warnings, fixed)
+
   if os.path.isfile(project.index_path) and entries:
     if "tracks.md" not in "".join(_read_lines(project.index_path)):
       if args.fix:
@@ -1172,6 +1452,27 @@ def cmd_doctor(project, args):
               "index.md does not link to the tracks registry.",
               project.index_path)
   return _doctor_result(project, errors, warnings, fixed)
+
+
+def _check_learnings(project, args, issue, warnings, fixed):
+  """Checks that every learnings index entry points at a learnings.md."""
+  learnings_path, learnings_lines = _load_learnings(project)
+  for item in _parse_index_entries(learnings_lines):
+    if not _find_learnings_file(project, item["id"]):
+      issue(warnings, "missing_learnings",
+            "The learnings index lists '%s', but its learnings.md was not"
+            " found in the tracks or archive directory." % item["id"],
+            learnings_path)
+    elif item["link"] and not os.path.isfile(os.path.normpath(os.path.join(
+        os.path.dirname(learnings_path), item["link"]))):
+      if args.fix:
+        _relink_learnings(project, item["id"], os.path.dirname(
+            _find_learnings_file(project, item["id"])))
+        fixed.append("Updated the learnings link for '%s'." % item["id"])
+      else:
+        issue(warnings, "stale_learnings_link",
+              "The learnings link for '%s' is out of date." % item["id"],
+              learnings_path)
 
 
 def _doctor_result(project, errors, warnings, fixed):
@@ -1279,6 +1580,28 @@ def build_parser():
                      help="Report a track's isolation branch and worktree.")
   p.add_argument("--track", required=True)
   p.set_defaults(func=cmd_branch_info)
+
+  p = sub.add_parser("remember", parents=[common],
+                     help="Index a track's learnings.md in project learnings.")
+  p.add_argument("--track", required=True)
+  p.add_argument("--summary", required=True,
+                 help="One line: what the track delivered or taught.")
+  p.add_argument("--tags", help="Comma-separated keywords for recall.")
+  p.set_defaults(func=cmd_remember)
+
+  p = sub.add_parser("add-note", parents=[common],
+                     help="Add a preference or convention to project"
+                     " learnings.")
+  p.add_argument("--section", choices=["preferences", "conventions"],
+                 required=True)
+  p.add_argument("--text", required=True)
+  p.set_defaults(func=cmd_add_note)
+
+  p = sub.add_parser("recall", parents=[common],
+                     help="Find past tracks whose learnings match a query.")
+  p.add_argument("--query", required=True)
+  p.add_argument("--limit", type=int, default=3)
+  p.set_defaults(func=cmd_recall)
 
   p = sub.add_parser("new-id", parents=[common],
                      help="Generate a unique track id.")
