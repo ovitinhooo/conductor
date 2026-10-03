@@ -1,6 +1,6 @@
 # Implementation Plan: Conductor Progress Mod
 
-## Phase 1: Spike and Scaffolding
+## Phase 1: Spike and Scaffolding [checkpoint: d5f65c5]
 
 - [x] Task: Verify the mod API against the installed Claude Code 314be78
     - [x] Load `zycck/claude-mods` `plan-progress` in a scratch session and confirm: `hooks.json` `modules`, the `claude-code` import (atoms, footer button, slash commands, sound playback, per-user storage), and desktop vs terminal behavior
@@ -10,7 +10,7 @@
     - [x] Add `hooks/hooks.json` + a no-op `hooks/register.ts`; run `claude plugin validate .` and confirm it reports the module's hooks and `$` calls
     - [x] Load the repo with `claude --plugin-dir .` and confirm the skills still load and `/plugin` lists the mod
     - [x] Check the mods troubleshooting docs for Claude Code older than 2.1.287; if an older release can run in a throwaway directory, confirm the skills still load, otherwise record "unverified" in `notes.md`
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) d5f65c5
 
 ## Phase 2: Progress Model (pure logic)
 
