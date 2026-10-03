@@ -56,8 +56,8 @@
 - [x] Task: Write failing tests for the staged-copy validation script 7b2de21
     - [x] `tests/test_validate_mod.py`: staging copies the repo without `.git`, the generated `tsconfig.json` and `.claude-plugin/types`, places the root `plugin.json` at `.claude-plugin/plugin.json`, and leaves the original tree untouched
     - [x] The `claude` command is injectable so the test stubs it; a stubbed "Validation passed" with no `hooks:` line fails, and one that lists hooks passes
-- [ ] Task: Implement `scripts/validate_mod.py`
-    - [ ] Standard library only; runs `claude plugin validate` in the staged copy (`claude` locally, `npx -y @anthropic-ai/claude-code` in CI) and requires the module's `hooks:` line
+- [x] Task: Implement `scripts/validate_mod.py` cfd655b
+    - [x] Standard library only; runs `claude plugin validate` in the staged copy (`claude` locally, `npx -y @anthropic-ai/claude-code` in CI) and requires the module's `hooks:` line
 - [ ] Task: Add the mod tests to CI
     - [ ] CI job in `.github/workflows/ci.yml` (Node 22, no `typescript`) running `npx -y @anthropic-ai/claude-code plugin test`, `plugin validate .` and `python3 scripts/validate_mod.py`
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
