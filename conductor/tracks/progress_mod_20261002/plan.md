@@ -36,7 +36,7 @@
     - [ ] Scenarios: bars appear at `AbovePrompt`, update on file change, hide with `/conductor-progress`, mute with `/conductor-progress-sound`, band button, close button, no Conductor dir renders nothing
 - [ ] Task: Implement the bars and refresh loop
     - [ ] `ui.render` at `AbovePrompt`, keeping other mods' drawing with `await next(e)`; `Svg` on desktop, `Box`/`Text` on terminal
-    - [ ] Row layout: glyph, title, bar, percent, close; phase capsules, task dots, pill, hover titles and SHAs where the surface supports them
+    - [ ] Row layout: glyph, title, bar, percent, close; phase capsules, task dots, pill; phase-level hover (title, counts, checkpoint SHA) where the surface supports it
     - [ ] `$.clock.every` timer and tool-call hook calling `$.ui.invalidate('ui.render')`; narrow-width degradation
     - [ ] Colors meeting 4.5:1 contrast; glyph plus label for every state
 - [ ] Task: Implement commands, footer button and persistence

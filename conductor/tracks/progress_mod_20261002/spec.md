@@ -21,8 +21,10 @@ without mod support ignore it, so the skills keep working unchanged.
    shows: state glyph, track title, progress bar, percent, and a close button.
 3. **Phases and tasks.** Phases render as capsules and tasks as dots, filled as
    tasks complete. A pill on the bar names the current phase and task
-   (`current_task`, else `next_task`). Hovering a phase or dot shows its title and,
-   for completed items, the recorded short SHA or checkpoint.
+   (`current_task`, else `next_task`). Hovering a phase capsule shows its title,
+   completed/total counts and its checkpoint SHA when one is recorded. Dots show
+   status only (the in-progress dot is titled), because the state script reports
+   per-phase counts, not a task list.
 4. **Derived states.** `running`: a task is `[~]`. `needs_input`: the current task
    is a phase-verification task (Conductor is waiting for the user to confirm).
    `done`: all tasks are complete or the track status is completed (bar turns
@@ -127,6 +129,8 @@ without mod support ignore it, so the skills keep working unchanged.
 - A `SessionMode` footer item and panes (v1 draws only in the band above the
   prompt).
 - Moving the manifest to `.claude-plugin/plugin.json`.
+- Per-task hover titles and SHAs (would need a `status --tasks` option in
+  `conductor_state.py`).
 
 ## References
 
@@ -175,3 +179,6 @@ script, and `$.store` for per-user persistence.
   analyses it with the manifest at the repo root; document the remote rollout
   switch and the unverified older-version behavior; fix a stale "stub-engine"
   acceptance criterion (Task 2 findings in `notes.md`).
+- 2026-10-03: Hover details are phase-level only (title, counts, checkpoint SHA);
+  dots show status only, because `status` has no per-task list and the model tests
+  already build dots from per-phase counts (decision after task 4).
