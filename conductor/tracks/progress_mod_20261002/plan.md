@@ -47,7 +47,7 @@
     - [x] Play them with `$.audio.play` on the specified transitions only
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) 13c7be0
 
-## Phase 4: Plugin, Lint and CI Integration
+## Phase 4: Plugin, Lint and CI Integration [checkpoint: 1e209b1]
 
 - [x] Task: Write failing lint tests for the new manifest files ac482b7
     - [x] `lint_skills.py` reports a `hooks.json` without exactly one existing module path, or a missing `types` file, and passes on the valid layout (extend `tests/test_lint_skills.py`)
@@ -60,7 +60,7 @@
     - [x] Standard library only; runs `claude plugin validate` in the staged copy (`claude` locally, `npx -y @anthropic-ai/claude-code` in CI) and requires the module's `hooks:` line
 - [x] Task: Add the mod tests to CI 1e209b1
     - [x] CI job in `.github/workflows/ci.yml` (Node 22, no `typescript`) running `npx -y @anthropic-ai/claude-code plugin test`, `plugin validate .` and `python3 scripts/validate_mod.py`
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) 1e209b1
 
 ## Phase 5: Documentation and Live Verification
 
