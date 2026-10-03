@@ -302,14 +302,33 @@ let state: ModuleState = freshState()
 
 // --- Refreshing and redrawing ---------------------------------------------------------------
 
-// Stores a refresh's bars, notes the tracks that turned done, and asks for a
-// redraw when what is drawn can have changed. The same snapshot twice does nothing.
+/** The sound files, relative to the plugin directory (made by `scripts/make_sounds.py`). */
+export const SOUND_FILES = {
+  needs_input: 'sounds/needs_input.wav',
+  done: 'sounds/done.wav',
+}
+
+// Plays one sound. `$.audio.play` resolves only when the clip has ended, so callers
+// never wait for it; a clip that cannot play (no player, no file) is ignored.
+async function playSound($: any, sound: keyof typeof SOUND_FILES): Promise<void> {
+  try {
+    await $.audio.play({ asset: SOUND_FILES[sound] })
+  } catch {
+    // silent: a missing sound never matters more than the bars
+  }
+}
+
+// Stores a refresh's bars, plays the sounds of the transitions it found, notes the
+// tracks that turned done, and asks for a redraw when what is drawn can have
+// changed. The same snapshot twice does nothing.
 function applySnapshot($: any, snapshot: Snapshot): void {
   if (snapshot.bars === state.bars && state.loaded) return
-  // `events` also tells which tracks just finished; sounds play from here in a later task
+  // `events` tells which tracks just needed input or finished. A muted session
+  // still records them (a finished track keeps its bar), it only plays nothing.
   const { events, next } = detectSounds(state.states, snapshot.bars)
   let redraw = snapshot.changed
   for (const event of events) {
+    if (!view.muted) void playSound($, event.sound)
     if (event.sound === 'done' && !state.finished.includes(event.track)) {
       state.finished.push(event.track)
       redraw = true
