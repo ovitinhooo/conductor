@@ -39,3 +39,32 @@ jobs:
 
       - name: Validate Claude Code plugin and marketplace
         run: npx -y @anthropic-ai/claude-code plugin validate .
+
+  mod:
+    runs-on: ubuntu-latest
+    env:
+      # The mod's events and methods can change between Claude Code releases,
+      # so this job pins the version the mod was tested with. Bump it
+      # deliberately and update the tested version in the README.
+      CLAUDE_CODE_VERSION: 2.1.288
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # validate_mod.py is Python (standard library only).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No sign-in, session or network is needed to run the mod's tests.
+      - name: Mod tests
+        run: npx -y @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }} plugin test
+
+      - name: Validate plugin and marketplace
+        run: npx -y @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }} plugin validate .
+
+      - name: Validate the mod module (staged copy)
+        run: python3 scripts/validate_mod.py --command "npx -y @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }}"
