@@ -1,6 +1,7 @@
 """Tests for scripts/make_sounds.py."""
 
 import importlib.util
+import contextlib
 import io
 import os
 import shutil
@@ -22,6 +23,8 @@ MAX_SECONDS = 1.2
 MIN_SECONDS = 0.2
 # The first and last samples must sit this close to silence (no click).
 EDGE_LIMIT = 0.01
+# The largest allowed step between neighbouring samples, as a fraction of full scale.
+MAX_STEP = 0.2
 
 
 def read_wav(data):
@@ -76,12 +79,13 @@ class RenderTest(unittest.TestCase):
         self.assertLessEqual(abs(samples[-1]) / FULL_SCALE, EDGE_LIMIT)
 
   def test_no_sudden_jumps(self):
-    # A click is a large step between neighbouring samples.
+    # A click is a jump between neighbouring samples far beyond what the
+    # tones' own slope allows (about 0.13 of full scale at the highest pitch).
     for name in NAMES:
       with self.subTest(name=name):
         _, _, _, samples = read_wav(make_sounds.render(name))
         step = max(abs(b - a) for a, b in zip(samples, samples[1:]))
-        self.assertLessEqual(step / FULL_SCALE, 0.1)
+        self.assertLessEqual(step / FULL_SCALE, MAX_STEP)
 
   def test_sounds_differ(self):
     needs_input = make_sounds.render("needs_input")
@@ -104,9 +108,13 @@ class CliTest(unittest.TestCase):
     self.out = tempfile.mkdtemp()
     self.addCleanup(shutil.rmtree, self.out)
 
+  def run_main(self, out):
+    with contextlib.redirect_stdout(io.StringIO()):
+      return make_sounds.main(["--out", out])
+
   def test_main_writes_both_files(self):
     target = os.path.join(self.out, "sounds")
-    self.assertEqual(make_sounds.main(["--out", target]), 0)
+    self.assertEqual(self.run_main(target), 0)
     for name in NAMES:
       path = os.path.join(target, name + ".wav")
       self.assertTrue(os.path.isfile(path), path)
@@ -116,8 +124,8 @@ class CliTest(unittest.TestCase):
   def test_main_twice_gives_identical_bytes(self):
     first = os.path.join(self.out, "a")
     second = os.path.join(self.out, "b")
-    make_sounds.main(["--out", first])
-    make_sounds.main(["--out", second])
+    self.run_main(first)
+    self.run_main(second)
     for name in NAMES:
       with open(os.path.join(first, name + ".wav"), "rb") as f1:
         with open(os.path.join(second, name + ".wav"), "rb") as f2:
