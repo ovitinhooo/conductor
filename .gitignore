@@ -209,3 +209,5 @@ __marimo__/
 tmp/
 
 .gemini/
+# Claude Code mod: generated beside the module on every --plugin-dir load
+/tsconfig.json

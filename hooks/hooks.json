@@ -1,0 +1,4 @@
+{
+  "description": "Conductor progress mod",
+  "modules": ["./register.ts"]
+}
