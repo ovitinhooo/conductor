@@ -24,9 +24,9 @@
 - [x] Task: Implement the model to pass the tests f9f4f71
     - [x] Pure functions with no engine imports, per the style guides
     - [x] Cover edge cases from the tests; keep coverage above 80%
-- [ ] Task: Write failing tests, then implement, the state-script client
-    - [ ] Top-level functions in `register.ts` resolve the plugin root and project root and call `locate`, `tracks`, `status` per `scripts/conductor_state.py` with `$.process.run`; tests stub `$.process`
-    - [ ] Throttle and skip refresh when output is unchanged; fail soft (show nothing) when Python or the script is missing
+- [x] Task: Write failing tests, then implement, the state-script client 85a8cb3
+    - [x] Top-level functions in `register.ts` resolve the plugin root and project root and call `locate`, `tracks`, `status` per `scripts/conductor_state.py` with `$.process.run`; tests stub `$.process`
+    - [x] Throttle and skip refresh when output is unchanged; fail soft (show nothing) when Python or the script is missing
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 3: Module Rendering, Controls and Sounds
