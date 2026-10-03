@@ -31,9 +31,9 @@
 
 ## Phase 3: Module Rendering, Controls and Sounds
 
-- [ ] Task: Write failing `claude plugin test` scenarios for the module
-    - [ ] Read the mods test docs first (stubbing `$.process`/`$.store`, testing drawings and timers)
-    - [ ] Scenarios: bars appear at `AbovePrompt`, update on file change, hide with `/conductor-progress`, mute with `/conductor-progress-sound`, band button, close button, no Conductor dir renders nothing
+- [x] Task: Write failing `claude plugin test` scenarios for the module 5932687
+    - [x] Read the mods test docs first (stubbing `$.process`/`$.store`, testing drawings and timers)
+    - [x] Scenarios: bars appear at `AbovePrompt`, update on file change, hide with `/conductor-progress`, mute with `/conductor-progress-sound`, band button, close button, no Conductor dir renders nothing
 - [ ] Task: Implement the bars and refresh loop
     - [ ] `ui.render` at `AbovePrompt`, keeping other mods' drawing with `await next(e)`; `Svg` on desktop, `Box`/`Text` on terminal
     - [ ] Row layout: glyph, title, bar, percent, close; phase capsules, task dots, pill; phase-level hover (title, counts, checkpoint SHA) where the surface supports it
