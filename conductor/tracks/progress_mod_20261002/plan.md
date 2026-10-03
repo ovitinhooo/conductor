@@ -42,9 +42,9 @@
 - [x] Task: Implement commands, footer button and persistence 0700d68
     - [x] `/conductor-progress`, `/conductor-progress-sound` with `$.command.register`, and a "Conductor" `Button` with a hotkey in the band
     - [x] Persist show/hide and mute per user in `$.store`, loaded at `session.start`
-- [ ] Task: Add the sounds
-    - [ ] `scripts/make_sounds.py` generates two short original `.wav` files (needs input, done) into `sounds/`; test it produces valid audio
-    - [ ] Play them with `$.audio.play` on the specified transitions only
+- [x] Task: Add the sounds 13c7be0
+    - [x] `scripts/make_sounds.py` generates two short original `.wav` files (needs input, done) into `sounds/`; test it produces valid audio
+    - [x] Play them with `$.audio.play` on the specified transitions only
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 4: Plugin, Lint and CI Integration
