@@ -49,8 +49,8 @@
 
 ## Phase 4: Plugin, Lint and CI Integration
 
-- [ ] Task: Write failing lint tests for the new manifest files
-    - [ ] `lint_skills.py` reports a `hooks.json` without exactly one existing module path, or a missing `types` file, and passes on the valid layout (extend `tests/test_lint_skills.py`)
+- [x] Task: Write failing lint tests for the new manifest files ac482b7
+    - [x] `lint_skills.py` reports a `hooks.json` without exactly one existing module path, or a missing `types` file, and passes on the valid layout (extend `tests/test_lint_skills.py`)
 - [ ] Task: Implement the lint checks and wire the plugin
     - [ ] Final `hooks/hooks.json` (plus `types/index.d.ts` and the `types` field only if `$.state` is used); keep `VERSION` in sync and `marketplace.json` free of `version`
 - [ ] Task: Write failing tests for the staged-copy validation script
