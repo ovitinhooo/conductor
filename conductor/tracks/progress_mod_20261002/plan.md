@@ -21,9 +21,9 @@
     - [x] Row selection: in_progress first, else first pending, max 3, "+N more"
     - [x] Dismissal rules and sound triggers (once per transition, never on initial load)
     - [x] Fail-soft input: missing fields, empty tracks, invalid JSON
-- [ ] Task: Implement the model to pass the tests
-    - [ ] Pure functions with no engine imports, per the style guides
-    - [ ] Cover edge cases from the tests; keep coverage above 80%
+- [x] Task: Implement the model to pass the tests f9f4f71
+    - [x] Pure functions with no engine imports, per the style guides
+    - [x] Cover edge cases from the tests; keep coverage above 80%
 - [ ] Task: Write failing tests, then implement, the state-script client
     - [ ] Top-level functions in `register.ts` resolve the plugin root and project root and call `locate`, `tracks`, `status` per `scripts/conductor_state.py` with `$.process.run`; tests stub `$.process`
     - [ ] Throttle and skip refresh when output is unchanged; fail soft (show nothing) when Python or the script is missing
