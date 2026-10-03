@@ -3,17 +3,24 @@
 // Claude Code calls `register` once when the plugin loads. This file also holds
 // the client that reads track progress: it runs `scripts/conductor_state.py`
 // through `$.process.run` and hands plain data to the pure model in model.ts.
-// The progress bars, commands and sounds that use it are added in later tasks.
+// It also draws the bars at `AbovePrompt` and keeps them fresh with a timer and
+// after tool calls. The commands, the band toggle's action, the saved choices
+// and the sounds are added in later tasks.
 //
 // Rules of the mods validator that shape this file: `$` is passed only to
 // functions declared at the top level of this file, never destructured or
 // stored, and every call is written in full (`$.process.run(...)`).
+import { buildBand, rowCapacity } from './layout.ts'
 import {
   barFromEntry,
   buildBar,
+  detectSounds,
+  dismiss,
   parseStatus,
   parseTracks,
   selectRows,
+  type Dismissals,
+  type StateMap,
   type TrackBar,
 } from './model.ts'
 
@@ -27,6 +34,10 @@ export const MIN_REFRESH_INTERVAL_MS = 1000
 export const RECHECK_EVERY = 30
 /** Tracks that get a `status --track` call per refresh (the bars shown at most). */
 export const MAX_DETAILED = 3
+/** The refresh timer's period (`$.clock.every`); the interval guard above also applies. */
+export const REFRESH_MS = 2000
+/** The most bar rows drawn (spec: at most 3, then "+N more"). */
+export const MAX_ROWS = 3
 /** One refresh never starts more processes than this: locate, tracks and the status calls. */
 export const MAX_PROCESSES = 5
 
@@ -239,13 +250,159 @@ export async function refreshBars($: any, options: RefreshOptions): Promise<Snap
   }
 }
 
+// --- What the module remembers between draws -----------------------------------------------
+
+/** The user's choices: bars shown, sounds muted. Task 10 loads and saves them with `$.store`. */
+const view = { visible: true, muted: false }
+
+type ModuleState = {
+  /** The bars of the last refresh, one per registry row. */
+  bars: TrackBar[]
+  /** True once a refresh finished: the first draw waits for it, later ones never do. */
+  loaded: boolean
+  /** The refresh the session start began, which the first draw may wait for. */
+  loading: Promise<void> | null
+  /** Closed bars: track id -> signature when closed (in memory only, never stored). */
+  dismissals: Dismissals
+  /** Tracks that turned done during this session: their bars stay until closed. */
+  finished: string[]
+  /** State last seen per track, to spot transitions (null before the first refresh). */
+  states: StateMap | null
+  timer: { cancel: () => void } | null
+}
+
+const freshState = (): ModuleState => ({
+  bars: [],
+  loaded: false,
+  loading: null,
+  dismissals: {},
+  finished: [],
+  states: null,
+  timer: null,
+})
+
+let state: ModuleState = freshState()
+
+// --- Refreshing and redrawing ---------------------------------------------------------------
+
+// Stores a refresh's bars, notes the tracks that turned done, and asks for a
+// redraw when what is drawn can have changed. The same snapshot twice does nothing.
+function applySnapshot($: any, snapshot: Snapshot): void {
+  if (snapshot.bars === state.bars && state.loaded) return
+  // `events` also tells which tracks just finished; sounds play from here in a later task
+  const { events, next } = detectSounds(state.states, snapshot.bars)
+  let redraw = snapshot.changed
+  for (const event of events) {
+    if (event.sound === 'done' && !state.finished.includes(event.track)) {
+      state.finished.push(event.track)
+      redraw = true
+    }
+  }
+  state.states = next
+  state.bars = snapshot.bars
+  state.loaded = true
+  if (redraw) $.ui.invalidate('ui.render')
+}
+
+/** Refreshes the bars once and redraws when needed. Never throws. */
+async function tick($: any): Promise<void> {
+  try {
+    const now = await $.clock.now()
+    if (typeof now !== 'number') return
+    applySnapshot($, await refreshBars($, { now, finished: state.finished }))
+  } catch {
+    // fail soft: the bars stay as they were
+  }
+}
+
+// Starts the refresh timer and the first refresh (the draw waits for it, if it is first)
+function startRefresh($: any): void {
+  try {
+    state.timer?.cancel()
+    state.timer = $.clock.every(REFRESH_MS, () => tick($))
+  } catch {
+    state.timer = null
+  }
+  state.loading = tick($)
+}
+
+// The first draw cannot wait for a timer tick: it waits for the first refresh instead
+async function ensureLoaded($: any): Promise<void> {
+  if (state.loaded) return
+  if (state.loading === null) state.loading = tick($)
+  await state.loading
+}
+
+function closeBar($: any, bar: TrackBar): void {
+  state.dismissals = dismiss(state.dismissals, bar)
+  $.ui.invalidate('ui.render')
+}
+
+// --- Drawing --------------------------------------------------------------------------------
+
+/**
+ * The band's tree, or null when nothing is to be drawn: no initialized Conductor,
+ * no track, or a script that failed. `engine` is the result of `await next(e)`.
+ */
+function drawBand($: any, e: any, engine: unknown): unknown {
+  // Any track the bars could show decides whether the band is ours at all
+  const any = selectRows(state.bars, { finished: state.finished }, MAX_ROWS)
+  if (any.rows.length + any.more === 0) return null
+  const { rows, more } = selectRows(
+    state.bars,
+    { dismissals: state.dismissals, finished: state.finished },
+    rowCapacity(e.props.maxRows, MAX_ROWS),
+  )
+  const { Box, Text, Button, Svg } = $.ui.resolve(e)
+  return buildBand({
+    ui: { Box, Text, Button, Svg },
+    desktop: e.surface === 'desktop',
+    columns: e.props.bodyColumns,
+    rows,
+    more,
+    showBars: view.visible,
+    engine,
+    onClose: (bar: TrackBar) => closeBar($, bar),
+    // The toggle's action (show or hide, and remember the choice) comes with the commands
+    onToggle: () => {},
+  })
+}
+
 // --- Module entry point -----------------------------------------------------------------
 
 export function register(on: any) {
-  // Runs when the session starts. Writing to the debug log keeps it invisible
-  // to users, and `next(e)` lets the session start as usual.
+  // A fresh load starts from clean state, whatever an earlier load left behind
+  resetClient()
+  state = freshState()
+  view.visible = true
+  view.muted = false
+
+  // Runs when the session starts. The debug log is invisible to users, the timer
+  // keeps the bars current, and `next(e)` lets the session start as usual.
   on('session.start', async ($: any, e: any, next: any) => {
     $.ui.log('conductor progress mod loaded', { to: 'debug' })
+    startRefresh($)
     return next(e)
+  })
+
+  // The bars, in the band above the prompt. The engine's own drawing (other mods'
+  // too) is kept: `next(e)` is awaited once and its result placed inside our tree.
+  on('ui.render', { component: 'AbovePrompt' }, async ($: any, e: any, next: any) => {
+    const engine = await next(e)
+    // A survey owns the band while it is up
+    if (e.props.hasSurvey === true) return engine
+    try {
+      await ensureLoaded($)
+      return drawBand($, e, engine) ?? engine
+    } catch {
+      return engine
+    }
+  })
+
+  // After a tool ran (Claude may have edited plan.md), refresh before the next tick
+  on('tool.call', async ($: any, e: any, next: any) => {
+    const result = await next(e)
+    await tick($)
+    return result
   })
 }

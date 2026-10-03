@@ -130,3 +130,33 @@ Verified 2026-10-02 with Claude Code 2.1.288 and the scaffold `hooks/hooks.json`
   validate` in 2.1.286 already analyses the module and prints the same two lines,
   so that release does know the `modules` key; versions before it were not tried
   (2.0.0 does not start on the installed Node).
+
+## Task 9 findings
+
+Verified 2026-10-03 with Claude Code 2.1.288 and `claude plugin test`.
+
+- `const { Box, Text, Button, Svg } = $.ui.resolve(e)` passes the validator on both
+  surfaces; `Svg` is `undefined` on the terminal table, so `layout.ts` checks
+  `typeof Svg === 'function'` as well as `e.surface === 'desktop'`. The validator
+  accepts arrow closures that mention `$` (`onClose: (bar) => closeBar($, bar)`) and
+  lists calls "via" the top-level helper that makes them.
+- Hover: `Box` takes `hover` (`display: 'flex'` on a Box drawn `display: 'none'`,
+  with `position: 'absolute'`) inside a keyed Box; `Svg` with `isInteractive: true`
+  draws in a sandboxed frame where `<title>` tooltips work. The desktop uses the
+  Svg titles for the phase hover (title, counts, checkpoint SHA) and the in-progress
+  dot's title; the terminal uses a hidden card under each keyed capsule Box.
+  `claude plugin test` checks that the tree is accepted but never paints it, so the
+  terminal card's placement (clipped by the band at its edges) is for the manual
+  live checklist.
+- Colors are raw `#RRGGBB` strings; the tree validator accepts them for `color` and
+  `backgroundColor`. An empty string child of a `Text` is avoided (a bar at 0% or
+  100% draws one run only).
+- The module keeps its state at module level and resets it in `register(on)`, so a
+  test (or a reload) starts from a clean module. The first `ui.render` waits for
+  the refresh that `session.start` begins, and never for a timer tick; later draws
+  use the cached bars. `session.start` does not await that refresh.
+- `$.clock.every` is wrapped in try/catch: `register.test.ts` stubs no clock, and a
+  missing implementation must not break the session start.
+- Task 10 hooks in: `view` (module-level `{ visible, muted }`) in `register.ts`, the
+  toggle's `onToggle` in `drawBand` (a no-op until then), and `detectSounds` in
+  `applySnapshot`, whose `events` task 11 plays unless `view.muted`.
