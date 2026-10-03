@@ -4,7 +4,10 @@ The skills are prompts, so most regressions are invisible until an agent trips
 over them. This linter catches the mechanical ones: broken frontmatter,
 unbalanced or collapsed code blocks, references to files, skills, agents, or
 state tool flags that do not exist, drift between duplicated assets, and
-version mismatches between manifests.
+version mismatches between manifests. It also validates the progress mod's
+manifest files: hooks/hooks.json must be valid JSON naming exactly one module
+file that exists inside the plugin and has a supported extension, and the file
+named by the `types` field of plugin.json, if any, must exist.
 
 Usage:
   python3 scripts/lint_skills.py [--root <repo_root>]
@@ -47,6 +50,9 @@ DUPLICATED_ASSETS = [
      "skills/conductor-new-track/assets/catalog.md"),
 ]
 KNOWN_AGENTS_DIR = "agents"
+HOOKS_MANIFEST = "hooks/hooks.json"
+MOD_MODULE_EXTENSIONS = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts",
+                         ".tsx")
 
 
 def _frontmatter(text):
@@ -136,6 +142,60 @@ def check_references(root, skill_dir, text, rel, problems, skills, agents,
             )
 
 
+def _load_json(root, rel, problems):
+  """Returns the parsed JSON file, or None (after reporting) if it is bad."""
+  try:
+    with open(os.path.join(root, rel), encoding="utf-8") as f:
+      return json.load(f)
+  except ValueError as e:
+    problems.append("%s: invalid JSON: %s" % (rel, e))
+    return None
+
+
+def check_mod_manifest(root, problems):
+  """Checks hooks/hooks.json and the plugin.json `types` file, if present."""
+  if not os.path.isfile(os.path.join(root, HOOKS_MANIFEST)):
+    return
+  data = _load_json(root, HOOKS_MANIFEST, problems)
+  if data is None:
+    return
+  modules = data.get("modules") if isinstance(data, dict) else None
+  if (not isinstance(modules, list) or len(modules) != 1
+      or not isinstance(modules[0], str)):
+    problems.append(
+        '%s: "modules" must be a list of exactly one module path string'
+        % HOOKS_MANIFEST
+    )
+    return
+  module = modules[0]
+  hooks_dir = os.path.join(root, os.path.dirname(HOOKS_MANIFEST))
+  target = os.path.realpath(os.path.join(hooks_dir, module))
+  plugin_root = os.path.realpath(root)
+  if os.path.commonpath([plugin_root, target]) != plugin_root:
+    problems.append("%s: module '%s' is outside the plugin directory"
+                    % (HOOKS_MANIFEST, module))
+  elif not os.path.isfile(target):
+    problems.append("%s: module file '%s' does not exist"
+                    % (HOOKS_MANIFEST, module))
+  ext = os.path.splitext(module)[1]
+  if ext not in MOD_MODULE_EXTENSIONS:
+    problems.append("%s: module '%s' has unsupported extension '%s'; use one"
+                    " of %s" % (HOOKS_MANIFEST, module, ext,
+                                ", ".join(MOD_MODULE_EXTENSIONS)))
+
+
+def check_types_file(root, problems):
+  """Checks that the file named by plugin.json `types` exists."""
+  if not os.path.isfile(os.path.join(root, "plugin.json")):
+    return
+  # Invalid JSON is reported by the version check, so discard it here.
+  data = _load_json(root, "plugin.json", [])
+  types = data.get("types") if isinstance(data, dict) else None
+  if types is not None and not (
+      isinstance(types, str) and os.path.isfile(os.path.join(root, types))):
+    problems.append("plugin.json: 'types' file '%s' does not exist" % types)
+
+
 def lint(root):
   problems = []
   skills_root = os.path.join(root, "skills")
@@ -218,6 +278,8 @@ def lint(root):
               "marketplace.json: do not set 'version' on plugin entries;"
               " Claude Code would pin users to it until it changes"
           )
+  check_mod_manifest(root, problems)
+  check_types_file(root, problems)
   return problems
 
 
