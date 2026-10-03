@@ -12,7 +12,7 @@
     - [x] Check the mods troubleshooting docs for Claude Code older than 2.1.287; if an older release can run in a throwaway directory, confirm the skills still load, otherwise record "unverified" in `notes.md`
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) d5f65c5
 
-## Phase 2: Progress Model (pure logic)
+## Phase 2: Progress Model (pure logic) [checkpoint: 85a8cb3]
 
 - [x] Task: Write failing tests for the plan-to-bar model 857e527
     - [x] Write them as `*.test.ts` files run by `claude plugin test`, against a pure `hooks/model.ts` that never touches `$` (the validator rejects `$` passed to imported functions)
@@ -27,7 +27,7 @@
 - [x] Task: Write failing tests, then implement, the state-script client 85a8cb3
     - [x] Top-level functions in `register.ts` resolve the plugin root and project root and call `locate`, `tracks`, `status` per `scripts/conductor_state.py` with `$.process.run`; tests stub `$.process`
     - [x] Throttle and skip refresh when output is unchanged; fail soft (show nothing) when Python or the script is missing
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) 85a8cb3
 
 ## Phase 3: Module Rendering, Controls and Sounds
 
