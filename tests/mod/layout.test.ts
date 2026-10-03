@@ -1,31 +1,38 @@
 // Tests for the row layout (hooks/layout.ts, pure) and for the drawing rules the
-// module scenarios in module.test.ts leave open: palette contrast, narrow-width
-// degradation, the row cut-off, phase hover details, the desktop Svg, and the bars
-// of tracks that finish during the session.
+// module scenarios in module.test.ts leave open: palette contrast, the segmented
+// bar, narrow-width degradation, the row cut-off, phase hover details, the desktop
+// Svg, and the bars of tracks that finish during the session.
 import { expect, test } from 'claude-code/testing'
 import * as fx from './fixtures.ts'
 import { buildBar, parseStatus } from '../../hooks/model.ts'
 import {
-  barCells,
   barSvg,
   capsuleDetails,
-  CARD,
-  compressDots,
   contrastRatio,
-  MAX_DOTS,
-  PALETTE,
-  phasesSvg,
-  planRow,
+  GAP,
+  phaseCardText,
+  phaseTag,
+  planBand,
+  RIGHT_GUTTER,
   rowCapacity,
+  segmentCells,
+  segmentsOf,
+  shortTitle,
+  STATE_COLOR,
   STATE_GLYPH,
   STATE_LABEL,
-  TRACK_COLOR,
+  stateText,
+  SVG_DARK,
+  SVG_LIGHT,
+  taskLine,
+  taskText,
 } from '../../hooks/layout.ts'
 import {
   arrange,
   draw,
   finished,
   KEYS,
+  needsInput,
   publish,
   REFRESH_MS,
   running,
@@ -35,20 +42,22 @@ import {
 } from './module-helpers.ts'
 
 const barOf = (status: unknown) => buildBar(parseStatus(fx.stdout(status))!)
+const STATES = ['running', 'needs_input', 'done', 'idle'] as const
 
-// --- Palette ------------------------------------------------------------------------------
+// --- Colors --------------------------------------------------------------------------------
 
-test('every state chip keeps at least 4.5:1 between its text and its background', () => {
-  for (const [state, swatch] of Object.entries(PALETTE)) {
-    expect(contrastRatio(swatch.fg, swatch.bg), state).toBeGreaterThanOrEqual(4.5)
+test('every desktop fill keeps 3:1 against its page and against the empty track', () => {
+  for (const palette of [SVG_LIGHT, SVG_DARK]) {
+    for (const state of STATES) {
+      expect(contrastRatio(palette[state], palette.page), state).toBeGreaterThanOrEqual(3)
+      expect(contrastRatio(palette[state], palette.track), state).toBeGreaterThanOrEqual(3)
+    }
   }
-  expect(contrastRatio(CARD.fg, CARD.bg)).toBeGreaterThanOrEqual(4.5)
 })
 
-test('the bar fill stands out from the track by at least 3:1', () => {
-  for (const [state, swatch] of Object.entries(PALETTE)) {
-    expect(contrastRatio(swatch.bg, TRACK_COLOR), state).toBeGreaterThanOrEqual(3)
-  }
+test('the terminal colors are theme keys, so they follow the person\'s theme', () => {
+  for (const state of STATES) expect(STATE_COLOR[state]).toMatch(/^[a-z][A-Za-z]+$/)
+  expect(new Set(STATES.map((s) => STATE_COLOR[s])).size).toBe(4)
 })
 
 test('the contrast function matches the known extremes', () => {
@@ -57,102 +66,178 @@ test('the contrast function matches the known extremes', () => {
 })
 
 test('every state has its own glyph and a word, so color is never the only signal', () => {
-  const states = ['running', 'needs_input', 'done', 'idle'] as const
-  expect(new Set(states.map((s) => STATE_GLYPH[s])).size).toBe(4)
-  expect(new Set(states.map((s) => STATE_LABEL[s])).size).toBe(4)
+  expect(new Set(STATES.map((s) => STATE_GLYPH[s])).size).toBe(4)
+  expect(new Set(STATES.map((s) => STATE_LABEL[s])).size).toBe(4)
+  expect(stateText('needs_input')).toBe('! needs input')
 })
 
-// --- Width planning -----------------------------------------------------------------------
+// --- Words ---------------------------------------------------------------------------------
 
-test('a wide band keeps everything, a narrow one drops the pill, then the dots, then the capsules', () => {
-  const bar = barOf(running('login_20260101', 'Login flow', 'Write the parser'))
-  let last = { pill: true, dots: true, capsules: true, barWidth: 12 }
-  for (let columns = 140; columns >= 20; columns--) {
-    const plan = planRow(bar, columns)
-    const now = { pill: plan.pillWidth > 0, dots: plan.dots, capsules: plan.capsules, barWidth: plan.barWidth }
-    // A part that was dropped never comes back on a narrower band (the bar itself
-    // shrinks at 60 and 40 columns, which frees room for the parts again)
-    if (now.barWidth === last.barWidth) {
-      for (const part of ['pill', 'dots', 'capsules'] as const) expect(last[part] || !now[part]).toBe(true)
-    }
-    // The pill goes first, then the dots, then the capsules
-    if (now.pill) expect(now.dots && now.capsules).toBe(true)
-    if (now.dots) expect(now.capsules).toBe(true)
-    last = now
-  }
-  expect(planRow(bar, 140)).toMatchObject({ capsules: true, dots: true })
-  expect(planRow(bar, 140).pillWidth).toBeGreaterThan(0)
-  const bare = planRow(bar, 40)
-  expect(bare).toMatchObject({ capsules: false, dots: false, pillWidth: 0 })
+test('a title keeps the name before its colon, when that name is a sensible length', () => {
+  expect(shortTitle('Conductor progress mod: live bars, a button and sounds')).toBe('Conductor progress mod')
+  expect(shortTitle('Login flow - rework the parser')).toBe('Login flow')
+  expect(shortTitle('Login flow')).toBe('Login flow')
+  // Too short a head, or none: the whole title
+  expect(shortTitle('UI: rework the band')).toBe('UI: rework the band')
+  expect(shortTitle('  Plain title  ')).toBe('Plain title')
 })
 
-test('the planned widths never exceed the band while the bare row fits', () => {
-  const bar = barOf(running('login_20260101', 'A very long track title that must be cut somewhere', 'Task'))
-  for (let columns = 36; columns <= 140; columns++) {
-    const plan = planRow(bar, columns)
-    // chip + title + bar + percent + close, then the optional parts, one cell apart
-    let sizes = [' ► running '.length, plan.titleWidth, plan.barWidth, 4, 5]
-    if (plan.capsules) sizes.push(bar.phases.length * 4 + (bar.phases.length - 1))
-    if (plan.dots) sizes.push(bar.dots.length)
-    if (plan.pillWidth > 0) sizes.push(plan.pillWidth)
-    const used = sizes.reduce((a, b) => a + b, 0) + sizes.length - 1
-    expect(used, `columns ${columns}`).toBeLessThanOrEqual(columns)
-  }
+test('a task loses its "Task:" prefix and a trailing workflow.md note', () => {
+  expect(taskText('Task: Write the parser')).toBe('Write the parser')
+  expect(taskText('Task: Phase Verification & Checkpoint (Refer to workflow.md)')).toBe('Phase Verification & Checkpoint')
+  expect(taskText('Keep (these) words')).toBe('Keep (these) words')
 })
 
-test('the bar width and the row cut-off follow the band', () => {
-  const bar = barOf(running())
-  expect(planRow(bar, 100).barWidth).toBe(12)
-  expect(planRow(bar, 50).barWidth).toBe(8)
-  expect(planRow(bar, 30).barWidth).toBe(5)
-  // The footer row takes one row of the band; at most three bars
-  expect(rowCapacity(12)).toBe(3)
-  expect(rowCapacity(3)).toBe(2)
-  expect(rowCapacity(1)).toBe(0)
-  expect(rowCapacity(0)).toBe(0)
+test('the task line says what the track is doing in each state', () => {
+  expect(taskLine(barOf(running()))).toMatchObject({ prefix: '', text: 'Write the parser', dim: false })
+  expect(taskLine(barOf(needsInput()))?.text).toBe('waiting for you to verify Phase 2: Parser')
+  expect(taskLine(barOf(finished()))?.text).toBe('2 phases, 4 tasks complete')
+  // Between tasks: the next one, dimmed with a prefix
+  const idle = barOf(fx.statusObject(
+    { id: 'idle_20260101', description: 'Idle', status: 'in_progress' },
+    [fx.phase(1, 'Phase 1: Setup', { completed: 1, pending: 1 })],
+    null,
+    fx.taskView(2, 'Task: Next thing', 'pending', 'Phase 1: Setup', 1),
+  ))
+  expect(taskLine(idle)).toMatchObject({ prefix: 'next: ', text: 'Next thing', dim: true })
 })
 
-test('a long plan groups its task dots instead of filling the row', () => {
-  const dots = Array.from({ length: 47 }, (_, i) => ({
-    status: (i < 20 ? 'completed' : i === 20 ? 'in_progress' : 'pending') as 'completed' | 'in_progress' | 'pending',
-    phase: 1,
-    title: null,
-  }))
-  const grouped = compressDots(dots)
-  expect(grouped).toHaveLength(MAX_DOTS)
-  expect(grouped[0]!.status).toBe('completed')
-  expect(grouped[grouped.length - 1]!.status).toBe('pending')
-  expect(compressDots(dots.slice(0, 5))).toHaveLength(5)
+test('the phase tag counts the phase the track is on', () => {
+  expect(phaseTag(barOf(running()))).toBe('phase 2/2')
+  expect(phaseTag(barOf(finished()))).toBeNull()
 })
 
-// --- Pieces -------------------------------------------------------------------------------------
-
-test('the terminal bar fills in proportion to the percent', () => {
-  expect(barCells(50, 12)).toEqual({ filled: '█'.repeat(6), empty: '░'.repeat(6) })
-  expect(barCells(0, 8).filled).toBe('')
-  expect(barCells(100, 8).empty).toBe('')
-  expect(barCells(250, 4).filled).toHaveLength(4)
-  expect(barCells(Number.NaN, 4).filled).toBe('')
-})
-
-test('the hover text names the phase, its counts and its checkpoint when it has one', () => {
+test('the hover texts name the phase, its counts and its checkpoint when it has one', () => {
   const base = { number: 1, title: 'Phase 1: Setup', completed: 2, total: 3, state: 'active' as const }
   expect(capsuleDetails({ ...base, checkpoint: 'abc1234' })).toBe('Phase 1: Setup · 2/3 tasks · checkpoint abc1234')
   expect(capsuleDetails({ ...base, checkpoint: null })).toBe('Phase 1: Setup · 2/3 tasks')
+  // The in-row card puts the counts first, since a narrow row cuts the end
+  expect(phaseCardText({ ...base, checkpoint: 'abc1234' })).toBe('► 2/3 · Phase 1: Setup · abc1234')
+  expect(phaseCardText({ ...base, state: 'done', completed: 3, checkpoint: null })).toBe('✓ 3/3 · Phase 1: Setup')
 })
 
-test('the desktop drawings are small valid SVG with escaped titles', () => {
-  const bar = barOf(running())
-  const track = barSvg(50, 'running', 12)
-  expect(track.source.startsWith('<svg ')).toBe(true)
-  expect(track.source.endsWith('</svg>')).toBe(true)
-  expect(track.width).toBe(96)
+// --- The segmented bar ---------------------------------------------------------------------
 
-  const tricky = { ...bar, phases: [{ ...bar.phases[0]!, title: 'A & <B> "C"' }] }
-  const phases = phasesSvg(tricky, true, true).source
-  expect(phases).toContain('A &amp; &lt;B&gt; &quot;C&quot;')
-  expect(phases).not.toContain('<B>')
-  expect(phasesSvg(bar, true, true).source.length).toBeLessThan(131072)
+test('the bar has one run per phase, sized by tasks, filling exactly its width', () => {
+  const bar = barOf(running())
+  for (const cells of [6, 12, 18, 40]) {
+    const segments = segmentsOf(bar, cells)
+    expect(segments).toHaveLength(2)
+    const used = segments.reduce((sum, s) => sum + s.width, 0) + segments.length - 1
+    expect(used, `cells ${cells}`).toBe(cells)
+  }
+  // Phase 1 is done (filled, success color); phase 2 has none done yet
+  const [setup, parser] = segmentsOf(bar, 18)
+  expect(setup!.filled).toBe(setup!.width)
+  expect(setup!.color).toBe(STATE_COLOR.done)
+  expect(parser!.filled).toBe(0)
+  expect(parser!.color).toBe(STATE_COLOR.running)
+  // The task in progress shows as a tip on the active phase only
+  expect(parser!.tip).toBe(1)
+  expect(setup!.tip).toBe(0)
+  expect(segmentsOf(barOf(finished()), 18).every((s) => s.tip === 0)).toBe(true)
+})
+
+test('a run is never shown full before its phase is done, nor empty-looking when done', () => {
+  const bar = barOf(fx.statusObject(
+    { id: 'x_20260101', description: 'X', status: 'in_progress' },
+    [fx.phase(1, 'Phase 1', { completed: 9, in_progress: 1 })],
+    fx.taskView(10, 'Task: Last', 'in_progress', 'Phase 1', 1),
+    null,
+  ))
+  const [only] = segmentsOf(bar, 8)
+  expect(only!.filled).toBe(7)
+  const done = segmentsOf(barOf(finished()), 8)
+  expect(done.every((s) => s.filled === s.width)).toBe(true)
+})
+
+test('a bar without phases, or with too many for its width, is one plain run at its percent', () => {
+  const plain = { ...barOf(running()), phases: [], percent: 50 }
+  expect(segmentsOf(plain, 10)).toEqual([{ width: 10, filled: 5, tip: 0, color: STATE_COLOR.running, tone: 'running', phase: null }])
+  expect(segmentsOf(barOf(running()), 4)).toHaveLength(1)
+  expect(segmentCells({ width: 5, filled: 2, tip: 0, color: 'x', tone: 'idle', phase: null })).toEqual({ filled: '━━', empty: '───' })
+  expect(segmentCells({ width: 5, filled: 2, tip: 1, color: 'x', tone: 'running', phase: null })).toEqual({ filled: '━━╸', empty: '──' })
+})
+
+test('the desktop bar is small valid SVG with escaped titles and a dark palette', () => {
+  const bar = barOf(running())
+  const drawn = barSvg(bar, 12)
+  expect(drawn.source.startsWith('<svg ')).toBe(true)
+  expect(drawn.source.endsWith('</svg>')).toBe(true)
+  expect(drawn.width).toBe(96)
+  expect(drawn.source).toContain('prefers-color-scheme: dark')
+  expect(drawn.source).toContain('<title>Phase 1: Setup · 2/2 tasks · checkpoint abc1234</title>')
+
+  const tricky = { ...bar, phases: [{ ...bar.phases[0]!, title: 'A & <B> "C"' }, bar.phases[1]!] }
+  const source = barSvg(tricky, 12).source
+  expect(source).toContain('A &amp; &lt;B&gt; &quot;C&quot;')
+  expect(source).not.toContain('<B>')
+  expect(source.length).toBeLessThan(131072)
+})
+
+// --- Width planning ------------------------------------------------------------------------
+
+// The cells a plan takes on one row: every part, one GAP apart
+function usedBy(plan: ReturnType<typeof planBand>): number {
+  const sizes = [plan.stateWidth, plan.titleWidth, plan.barWidth, 4, 1]
+  if (plan.phaseWidth > 0 || plan.taskWidth > 0) {
+    sizes.push(plan.phaseWidth + plan.taskWidth + (plan.phaseWidth > 0 && plan.taskWidth > 0 ? GAP : 0))
+  }
+  if (plan.toggleInline) sizes.push('9: Conductor ▾'.length)
+  return sizes.reduce((a, b) => a + b, 0) + GAP * (sizes.length - 1)
+}
+
+test('a wide band keeps everything; narrower ones drop the phase tag, then the task, then move the toggle', () => {
+  const rows = [barOf(running('login_20260101', 'Login flow', 'Write the parser'))]
+  let last = { phase: true, task: true, toggle: true }
+  for (let columns = 160; columns >= 30; columns--) {
+    const plan = planBand(rows, columns)
+    const now = { phase: plan.phaseWidth > 0, task: plan.taskWidth > 0, toggle: plan.toggleInline }
+    // A part that was dropped never comes back on a narrower band
+    for (const part of ['phase', 'task', 'toggle'] as const) expect(last[part] || !now[part], `${part} at ${columns}`).toBe(true)
+    // The phase tag goes first, then the task, then the inline toggle
+    if (now.phase) expect(now.task && now.toggle).toBe(true)
+    if (now.task) expect(now.toggle).toBe(true)
+    last = now
+  }
+  expect(planBand(rows, 140)).toMatchObject({ toggleInline: true })
+  expect(planBand(rows, 140).phaseWidth).toBeGreaterThan(0)
+  expect(planBand(rows, 140).taskWidth).toBeGreaterThanOrEqual('Write the parser'.length)
+  expect(planBand(rows, 45)).toMatchObject({ phaseWidth: 0, taskWidth: 0, toggleInline: false })
+})
+
+test('the planned widths, with the gutter for the band marker, never exceed the band', () => {
+  const rows = [
+    barOf(running('login_20260101', 'A very long track title that must be cut somewhere', 'A long task name too')),
+    barOf(needsInput('other_20260101', 'Other')),
+  ]
+  for (let columns = 40; columns <= 200; columns++) {
+    expect(usedBy(planBand(rows, columns)) + RIGHT_GUTTER, `columns ${columns}`).toBeLessThanOrEqual(columns)
+  }
+})
+
+test('room left over goes to the task, then to the bar, then fills the row to the controls', () => {
+  const rows = [barOf(running())]
+  const wide = planBand(rows, 200)
+  expect(wide.phaseWidth + GAP + wide.taskWidth).toBeGreaterThanOrEqual(phaseCardText(rows[0]!.phases[0]!).length)
+  // With the task shown, the row ends exactly at the gutter: the controls line up at the right
+  for (const columns of [100, 140, 200]) expect(usedBy(planBand(rows, columns)) + RIGHT_GUTTER).toBe(columns)
+  expect(planBand(rows, 100).barWidth).toBeGreaterThanOrEqual(18)
+  expect(planBand(rows, 200).barWidth).toBe(40)
+  expect(planBand(rows, 50).barWidth).toBeGreaterThanOrEqual(8)
+})
+
+test('the rows cut to the band, keeping a footer row only when it is needed', () => {
+  // The toggle on the first row and every candidate fits: no footer
+  expect(rowCapacity(12, 2, true)).toBe(2)
+  // More candidates than the most rows: a footer for "+N more"
+  expect(rowCapacity(12, 5, true)).toBe(3)
+  // The toggle in the footer: one row less
+  expect(rowCapacity(3, 3, false)).toBe(2)
+  expect(rowCapacity(2, 3, true)).toBe(1)
+  expect(rowCapacity(1, 1, true)).toBe(1)
+  expect(rowCapacity(1, 1, false)).toBe(0)
+  expect(rowCapacity(0, 1, true)).toBe(0)
 })
 
 // --- Through the module -------------------------------------------------------------------------
@@ -186,23 +271,24 @@ test('the rows cut to what the band allows, with a "+N more" text', async ($, on
   expect((await ui.find({ key: KEYS.toggle }))?.type).toBe('Button')
 })
 
-test('the terminal shows a phase hover card with title, counts and checkpoint SHA', async ($, on) => {
+test('the terminal row holds a phase card per run, with counts, title and checkpoint SHA', async ($, on) => {
   arrange(on, worldOf(running()))
   await startSession($)
 
-  const ui = await draw($, 'terminal')
+  // Wide enough for the whole card; a narrower row cuts its end
+  const ui = await draw($, 'terminal', { bodyColumns: 140 })
 
-  expect(await textOf(ui, /Phase 1: Setup · 2\/2 tasks · checkpoint abc1234/)).toBeDefined()
-  expect(await textOf(ui, /Phase 2: Parser · 0\/2 tasks\s*$/)).toBeDefined()
+  expect(await textOf(ui, /✓ 2\/2 · Phase 1: Setup · abc1234/)).toBeDefined()
+  expect(await textOf(ui, /► 0\/2 · Phase 2: Parser\s*$/)).toBeDefined()
 })
 
-test('the desktop draws the bar and the phases as Svg, with the labels still in Text', async ($, on) => {
+test('the desktop draws the bar as one Svg, with the labels still in Text', async ($, on) => {
   arrange(on, worldOf(running()))
   await startSession($, 'desktop')
 
   const ui = await draw($, 'desktop')
 
-  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(2)
+  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(1)
   expect(await textOf(ui, /running/)).toBeDefined()
   expect(await textOf(ui, /\b50%/)).toBeDefined()
   expect(await textOf(ui, /Write the parser/)).toBeDefined()

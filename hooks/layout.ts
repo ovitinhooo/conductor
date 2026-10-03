@@ -5,46 +5,60 @@
 // arguments, with the callbacks a press runs, so every width, color and text
 // rule here can be tested without a session.
 //
-// One row per track, in cells on the terminal (`Box`/`Text`, block characters) and
-// with an `Svg` for the bar, the phase capsules and the task dots on the desktop:
+// One row per track, in cells on the terminal (`Box`/`Text`) and with an `Svg`
+// for the bar on the desktop. The columns line up from row to row:
 //
-//   [glyph label]  title  [=====-----] 50%  [capsules] [dots]  pill  [close]
+//   ► running  Login flow  ━━━━━━ ━━━───────  50%  phase 2/2  Write the parser   ✕  9: Conductor ▾
 //
-// Narrow bands degrade in a fixed order instead of overflowing: the pill goes
-// first, then the dots, then the capsules; the title shrinks last.
+// The bar has one segment per phase, sized by its task count and filled as its
+// tasks complete; hovering a segment shows the phase's title, counts and
+// checkpoint in place of the row's phase and task. The toggle sits at the end of the first row when it fits, else in
+// a footer row of its own (which also carries "+N more"). Narrow bands degrade
+// in a fixed order instead of overflowing: the phase tag goes first, then the
+// bar shrinks, then the task, then the toggle moves to the footer, and the
+// title shrinks last. The right edge keeps room for the band's own `[-]`.
 //
-// PALETTE (WCAG contrast of the label text on its chip, computed by
-// `contrastRatio`, and checked by tests/mod/layout.test.ts):
-//   running      #FFFFFF on #1D4ED8  6.70:1
-//   needs input  #FFFFFF on #B45309  5.02:1
-//   done         #FFFFFF on #15803D  5.02:1
-//   idle         #FFFFFF on #4B5563  7.56:1
-//   hover card   #F9FAFB on #1F2937 14.05:1
-// The bar fill reuses the chip color, drawn on the neutral track #D1D5DB, which
-// keeps at least 3:1 (the non-text minimum). State is never color alone: every
-// chip carries a glyph and a word, and the percent is always written out.
-import type { Capsule, Dot, TrackBar, TrackState } from './model.ts'
+// COLOR. Terminal colors are theme keys (`success`, `warning`, `suggestion`,
+// `inactive`, `subtle`), so they follow the person's light, dark or colorblind
+// theme instead of fixed hex values. The desktop Svg cannot read the theme: it
+// carries a light and a dark palette and picks one with `prefers-color-scheme`.
+// Each fill keeps at least 3:1 (the non-text minimum) against its page and
+// against the empty track, checked by tests/mod/layout.test.ts. State is never
+// color alone: every row writes a glyph and a word, and the percent.
+import type { Capsule, TrackBar, TrackState } from './model.ts'
 
-// --- Palette -----------------------------------------------------------------------
+// --- Colors ---------------------------------------------------------------------------
 
-export type Swatch = { bg: string, fg: string }
-
-export const PALETTE: Record<TrackState, Swatch> = {
-  running: { bg: '#1D4ED8', fg: '#FFFFFF' },
-  needs_input: { bg: '#B45309', fg: '#FFFFFF' },
-  done: { bg: '#15803D', fg: '#FFFFFF' },
-  idle: { bg: '#4B5563', fg: '#FFFFFF' },
+/** Terminal theme key of each state: its glyph, its label and the bar's fill. */
+export const STATE_COLOR: Record<TrackState, string> = {
+  running: 'suggestion',
+  needs_input: 'warning',
+  done: 'success',
+  idle: 'inactive',
 }
-/** The empty part of a progress bar. */
-export const TRACK_COLOR = '#D1D5DB'
-/** The hover card shown over a phase capsule on the terminal. */
-export const CARD: Swatch = { bg: '#1F2937', fg: '#F9FAFB' }
+/** Theme key of secondary text (the phase tag, a next task, the controls). */
+export const MUTED_COLOR = 'inactive'
+/** Theme key of the empty part of the bar: quieter than text, read by its glyph too. */
+export const TRACK_KEY = 'subtle'
 
-/** Capsule colors: a finished phase is green, the active one blue, the rest gray. */
-const CAPSULE: Record<Capsule['state'], Swatch> = {
-  done: PALETTE.done,
-  active: PALETTE.running,
-  pending: PALETTE.idle,
+/** One desktop palette: the page it is drawn on, the empty track and the fills. */
+export type SvgPalette = { page: string, track: string } & Record<TrackState, string>
+
+export const SVG_LIGHT: SvgPalette = {
+  page: '#FFFFFF',
+  track: '#E5E7EB',
+  running: '#2563EB',
+  needs_input: '#B45309',
+  done: '#15803D',
+  idle: '#6B7280',
+}
+export const SVG_DARK: SvgPalette = {
+  page: '#1F1F1F',
+  track: '#3F3F46',
+  running: '#60A5FA',
+  needs_input: '#F59E0B',
+  done: '#4ADE80',
+  idle: '#A1A1AA',
 }
 
 function luminance(hex: string): number {
@@ -75,116 +89,74 @@ export const STATE_GLYPH: Record<TrackState, string> = {
   done: '✓',
   idle: '○',
 }
-const CAPSULE_GLYPH: Record<Capsule['state'], string> = { done: '✓', active: '►', pending: '·' }
-const DOT_GLYPH: Record<Dot['status'], string> = { completed: '●', in_progress: '◐', pending: '○' }
 
-/** The chip text: glyph, then the label, so the state reads without color. */
-export const chipText = (state: TrackState): string => ` ${STATE_GLYPH[state]} ${STATE_LABEL[state]} `
+/** The state text: glyph, then the label, so the state reads without color. */
+export const stateText = (state: TrackState): string => `${STATE_GLYPH[state]} ${STATE_LABEL[state]}`
 
-// --- Width planning -------------------------------------------------------------------
+/** The toggle's label while the bars show and while they are hidden. */
+export const TOGGLE_LABEL = { shown: 'Conductor ▾', hidden: 'Conductor ▸' }
+/** The toggle's digit hotkey: a digit also fires from an empty prompt. */
+export const TOGGLE_HOTKEY = '9'
 
-/** Longest title drawn in full; a longer one is cut with an ellipsis. */
-export const TITLE_MAX = 24
-/** The least room worth giving a title or a pill. */
-export const TITLE_MIN = 6
-export const PILL_MIN = 14
-export const PILL_MAX = 40
-/** Task dots beyond this many are grouped so a long plan never fills the row. */
-export const MAX_DOTS = 20
-
-const PCT_W = 4
-const CLOSE_W = 5
-// Terminal: a capsule is ` ✓1 ` (4 cells). Desktop: 30 px wide, 8 px per cell.
-const CAPSULE_CELLS = 4
-const CAPSULE_PX = 30
-const DOT_PX = 12
-const PX_PER_CELL = 8
-
-export type RowPlan = {
-  barWidth: number
-  titleWidth: number
-  /** 0 when the pill is dropped. */
-  pillWidth: number
-  capsules: boolean
-  dots: boolean
-}
-
-/** Dots to draw: the plan's own, or MAX_DOTS groups when there are more. */
-export function compressDots(dots: Dot[], max: number = MAX_DOTS): Dot[] {
-  if (dots.length <= max) return dots
-  const grouped: Dot[] = []
-  for (let i = 0; i < max; i++) {
-    const slice = dots.slice(Math.floor((i * dots.length) / max), Math.floor(((i + 1) * dots.length) / max))
-    const every = (status: Dot['status']) => slice.every((dot) => dot.status === status)
-    const status: Dot['status'] = every('completed') ? 'completed' : every('pending') ? 'pending' : 'in_progress'
-    grouped.push({ status, phase: slice[0]!.phase, title: slice.find((dot) => dot.title !== null)?.title ?? null })
-  }
-  return grouped
-}
-
-function capsulesWidth(count: number, desktop: boolean): number {
-  if (count === 0) return 0
-  return desktop ? Math.ceil((count * (CAPSULE_PX + 4)) / PX_PER_CELL) : count * CAPSULE_CELLS + (count - 1)
-}
-
-function dotsWidth(count: number, desktop: boolean): number {
-  if (count === 0) return 0
-  return desktop ? Math.ceil((count * DOT_PX + 8) / PX_PER_CELL) : count
-}
-
-/**
- * Decides what fits in `columns` cells: the bar shrinks on narrow bands, then
- * the pill, the dots and the capsules drop in that order, then the title
- * shrinks. The widths of what stays always add up to at most `columns`, except
- * when even the bare row (chip, bar, percent, close) is wider, which only a
- * band under about 30 cells can be.
- */
-export function planRow(bar: TrackBar, columns: number, desktop = false): RowPlan {
-  const width = Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 80
-  const barWidth = width >= 60 ? 12 : width >= 40 ? 8 : 5
-  const titleFull = Math.min(Array.from(bar.title).length, TITLE_MAX)
-  const capsulesW = capsulesWidth(bar.phases.length, desktop)
-  const dotsW = dotsWidth(Math.min(bar.dots.length, MAX_DOTS), desktop)
-  const pillFull = bar.pill ? Math.min(Array.from(bar.pill.text).length, PILL_MAX) : 0
-
-  // Row width for a choice of parts: the elements are separated by one cell
-  const total = (title: number, parts: { capsules: boolean, dots: boolean, pill: number }): number => {
-    const sizes = [chipText(bar.state).length, Math.max(title, 1), barWidth, PCT_W, CLOSE_W]
-    if (parts.capsules) sizes.push(capsulesW)
-    if (parts.dots) sizes.push(dotsW)
-    if (parts.pill > 0) sizes.push(parts.pill)
-    return sizes.reduce((sum, size) => sum + size, 0) + sizes.length - 1
-  }
-
-  const tiers = [
-    { capsules: capsulesW > 0, dots: dotsW > 0, pill: pillFull > 0 ? PILL_MIN : 0 },
-    { capsules: capsulesW > 0, dots: dotsW > 0, pill: 0 },
-    { capsules: capsulesW > 0, dots: false, pill: 0 },
-    { capsules: false, dots: false, pill: 0 },
-  ]
-  for (const tier of tiers) {
-    if (total(titleFull, tier) > width) continue
-    const rest = width - total(titleFull, { ...tier, pill: 0 })
-    const pillWidth = tier.pill > 0 ? Math.min(pillFull, rest - 1) : 0
-    return { barWidth, titleWidth: titleFull, pillWidth, capsules: tier.capsules, dots: tier.dots }
-  }
-  // Nothing optional left: the title takes what remains
-  const bare = { capsules: false, dots: false, pill: 0 }
-  const titleWidth = Math.max(1, Math.min(titleFull, width - (total(1, bare) - 1)))
-  return { barWidth, titleWidth, pillWidth: 0, capsules: false, dots: false }
-}
-
-/** How many bar rows fit: the band's rows less the footer row, at most `max`. */
-export function rowCapacity(maxRows: number, max = 3): number {
-  const rows = Number.isFinite(maxRows) ? Math.floor(maxRows) : 12
-  return Math.max(0, Math.min(max, rows - 1))
-}
+const FILLED = '━'
+const TIP = '╸'
+const EMPTY = '─'
 
 // --- Text helpers ---------------------------------------------------------------------
+
+const length = (text: string): number => Array.from(text).length
 
 const clip = (text: string, width: number): string => {
   const chars = Array.from(text)
   return chars.length <= width ? text : chars.slice(0, Math.max(0, width - 1)).join('') + '…'
+}
+
+/**
+ * The title a row shows. Track descriptions tend to be a name, a colon and a
+ * long explanation ("Progress mod: live bars, buttons and sounds"); the name
+ * alone reads better in a row, so it is used when it is a sensible length.
+ */
+export function shortTitle(title: string): string {
+  const cut = title.search(/:\s|\s[-–—]\s/)
+  const head = cut > 0 ? title.slice(0, cut).trim() : ''
+  return length(head) >= 4 && length(head) <= 40 ? head : title.trim()
+}
+
+/** A task as a row shows it: no `Task:` prefix, no trailing `(… workflow.md)` note. */
+export function taskText(text: string): string {
+  return text
+    .replace(/^Task:\s*/, '')
+    .replace(/\s*\([^()]*workflow\.md[^()]*\)\s*$/i, '')
+    .trim()
+}
+
+/** The phase a row is on (`phase 2/3`), or null for a track without phases or a finished one. */
+export function phaseTag(bar: TrackBar): string | null {
+  if (bar.phases.length === 0 || bar.state === 'done') return null
+  let index = bar.phases.findIndex((phase) => phase.state === 'active')
+  if (index < 0) index = bar.phases.findIndex((phase) => phase.state !== 'done')
+  if (index < 0) return null
+  return `phase ${index + 1}/${bar.phases.length}`
+}
+
+/** What the row says the track is doing: its words, how to draw them, and a dim prefix. */
+export type TaskLine = { prefix: string, text: string, color?: string, dim: boolean }
+
+export function taskLine(bar: TrackBar): TaskLine | null {
+  if (bar.state === 'done') {
+    const tasks = bar.dots.length
+    if (bar.phases.length === 0 || tasks === 0) return null
+    const phases = bar.phases.length === 1 ? '1 phase' : `${bar.phases.length} phases`
+    return { prefix: '', text: `${phases}, ${tasks} tasks complete`, dim: true }
+  }
+  if (bar.state === 'needs_input') {
+    const phase = bar.pill?.phase ? ` ${bar.pill.phase}` : ''
+    return { prefix: '', text: `waiting for you to verify${phase}`, color: STATE_COLOR.needs_input, dim: false }
+  }
+  if (bar.pill === null) return null
+  const text = taskText(bar.pill.task)
+  if (text === '') return null
+  return bar.pill.kind === 'next' ? { prefix: 'next: ', text, dim: true } : { prefix: '', text, dim: false }
 }
 
 /** The hover text of a phase: title, completed/total counts and its checkpoint SHA. */
@@ -194,8 +166,17 @@ export function capsuleDetails(capsule: Capsule): string {
   return parts.join(' · ')
 }
 
-const escapeXml = (text: string): string =>
-  text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!)
+const PHASE_GLYPH: Record<Capsule['state'], string> = { done: '✓', active: '►', pending: '○' }
+
+/**
+ * The phase card a row shows over its phase and task while a run of the bar is
+ * hovered: what matters most first, since a narrow row cuts the end.
+ */
+export function phaseCardText(capsule: Capsule): string {
+  const parts = [`${PHASE_GLYPH[capsule.state]} ${capsule.completed}/${capsule.total}`, capsule.title || 'Phase ' + capsule.number]
+  if (capsule.checkpoint) parts.push(capsule.checkpoint)
+  return parts.join(' · ')
+}
 
 /** One line for a reader that cannot see the drawing. */
 export function summary(bar: TrackBar): string {
@@ -204,61 +185,239 @@ export function summary(bar: TrackBar): string {
   return `${bar.title}: ${STATE_LABEL[bar.state]}, ${bar.percent}%${phases}`
 }
 
-// --- The progress bar -------------------------------------------------------------------
+// --- The segmented bar ----------------------------------------------------------------
 
-/** The filled and empty cells of a terminal bar. */
-export function barCells(percent: number, width: number): { filled: string, empty: string } {
-  const clamped = Math.min(100, Math.max(0, Number.isFinite(percent) ? percent : 0))
-  const count = Math.round((clamped / 100) * width)
-  return { filled: '█'.repeat(count), empty: '░'.repeat(width - count) }
+/** One run of the bar: a phase's share of the cells and how many of them are filled. */
+export type Segment = {
+  width: number
+  filled: number
+  /** 1 when the cell after the filled ones marks the task in progress, else 0. */
+  tip: number
+  /** Theme key of the filled cells. */
+  color: string
+  /** Fill state for the desktop palette. */
+  tone: TrackState
+  /** The phase it stands for; null when the bar has a single plain run. */
+  phase: Capsule | null
 }
 
-/** The desktop bar: a track and a fill, 8 px per cell, 10 px high. Small and valid. */
-export function barSvg(percent: number, state: TrackState, cells: number): { source: string, width: number } {
-  const width = cells * PX_PER_CELL
-  const clamped = Math.min(100, Math.max(0, Number.isFinite(percent) ? percent : 0))
-  const fill = Math.round((clamped / 100) * width)
-  const source =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="10" viewBox="0 0 ${width} 10">` +
-    `<rect width="${width}" height="10" rx="5" fill="${TRACK_COLOR}"/>` +
-    (fill > 0 ? `<rect width="${fill}" height="10" rx="5" fill="${PALETTE[state].bg}"/>` : '') +
-    '</svg>'
-  return { source, width }
+// Splits `cells` among `weights` in proportion, at least one cell each (largest remainder)
+function apportion(weights: number[], cells: number): number[] {
+  const sum = weights.reduce((a, b) => a + b, 0)
+  const spare = cells - weights.length
+  const exact = weights.map((w) => (sum > 0 ? (w / sum) * spare : spare / weights.length))
+  const sizes = exact.map((x) => 1 + Math.floor(x))
+  let left = cells - sizes.reduce((a, b) => a + b, 0)
+  const order = exact.map((x, i) => ({ i, r: x - Math.floor(x) })).sort((a, b) => b.r - a.r)
+  for (let k = 0; left > 0; k = (k + 1) % order.length, left--) sizes[order[k]!.i]! += 1
+  return sizes
 }
 
-/** The desktop capsules and dots: one interactive SVG, each shape with a hover `<title>`. */
-export function phasesSvg(bar: TrackBar, withCapsules: boolean, withDots: boolean): { source: string, width: number } {
+// Filled cells of a run: full only when every task is done, never full before
+function filledCells(completed: number, total: number, width: number): number {
+  if (total <= 0) return 0
+  if (completed >= total) return width
+  return Math.min(width - 1, Math.round((completed / total) * width))
+}
+
+function plainSegment(bar: TrackBar, width: number): Segment {
+  const percent = Math.min(100, Math.max(0, Number.isFinite(bar.percent) ? bar.percent : 0))
+  const filled = bar.state === 'done' ? width : filledCells(percent, 100, width)
+  return { width, filled, tip: 0, color: STATE_COLOR[bar.state], tone: bar.state, phase: null }
+}
+
+/**
+ * The runs of a bar `cells` wide, one per phase with tasks and one cell apart,
+ * sized by task count. A bar without phases, or with too many phases for its
+ * width, is one plain run filled to its percent. Widths and gaps add up to
+ * exactly `cells`.
+ */
+export function segmentsOf(bar: TrackBar, cells: number): Segment[] {
+  const width = Math.max(1, Math.floor(cells))
+  const phases = bar.phases.filter((phase) => phase.total > 0)
+  if (phases.length === 0 || phases.length * 3 - 1 > width) return [plainSegment(bar, width)]
+  const sizes = apportion(
+    phases.map((phase) => phase.total),
+    width - (phases.length - 1),
+  )
+  return phases.map((phase, i) => {
+    const complete = bar.state === 'done' || phase.state === 'done'
+    const tone: TrackState = complete ? 'done' : bar.state
+    const filled = complete ? sizes[i]! : filledCells(phase.completed, phase.total, sizes[i]!)
+    // A task in progress in this phase shows as a tip after the filled cells
+    const working = !complete && phase.state === 'active' && (bar.state === 'running' || bar.state === 'needs_input')
+    return {
+      width: sizes[i]!,
+      filled,
+      tip: working && filled < sizes[i]! ? 1 : 0,
+      color: STATE_COLOR[tone],
+      tone,
+      phase,
+    }
+  })
+}
+
+/** The terminal text of a run: filled cells (with the tip, when it has one), then empty ones. */
+export function segmentCells(segment: Segment): { filled: string, empty: string } {
+  return {
+    filled: FILLED.repeat(segment.filled) + TIP.repeat(segment.tip),
+    empty: EMPTY.repeat(segment.width - segment.filled - segment.tip),
+  }
+}
+
+const escapeXml = (text: string): string =>
+  text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!)
+
+const PX_PER_CELL = 8
+const BAR_PX_HEIGHT = 8
+const GAP_PX = 3
+
+// The <style> that picks the palette: classes per fill, the dark set under the media query
+function svgStyle(): string {
+  const rules = (p: SvgPalette) =>
+    `.t{fill:${p.track}}.running{fill:${p.running}}.needs_input{fill:${p.needs_input}}` +
+    `.done{fill:${p.done}}.idle{fill:${p.idle}}`
+  return `<style>${rules(SVG_LIGHT)}@media (prefers-color-scheme: dark){${rules(SVG_DARK)}}</style>`
+}
+
+/**
+ * The desktop bar: the same runs as the terminal's, 8 px per cell, rounded,
+ * each run with a hover `<title>` naming its phase. Small and valid.
+ */
+export function barSvg(bar: TrackBar, cells: number): { source: string, width: number, height: number } {
+  const segments = segmentsOf(bar, cells)
+  const width = Math.max(1, Math.floor(cells)) * PX_PER_CELL
+  const gaps = segments.length - 1
+  const usable = width - gaps * GAP_PX
+  const total = segments.reduce((sum, s) => sum + s.width, 0)
+  const r = BAR_PX_HEIGHT / 2
   let x = 0
   let body = ''
-  if (withCapsules) {
-    for (const capsule of bar.phases) {
-      const swatch = CAPSULE[capsule.state]
-      body +=
-        `<g><title>${escapeXml(capsuleDetails(capsule))}</title>` +
-        `<rect x="${x}" y="0" width="${CAPSULE_PX}" height="16" rx="8" fill="${swatch.bg}"/>` +
-        `<text x="${x + CAPSULE_PX / 2}" y="12" font-size="11" text-anchor="middle" fill="${swatch.fg}">` +
-        `${CAPSULE_GLYPH[capsule.state]}${capsule.number}</text></g>`
-      x += CAPSULE_PX + 4
+  segments.forEach((segment, i) => {
+    const w = i === segments.length - 1 ? width - x : Math.round((segment.width / total) * usable)
+    const fill = segment.width > 0 ? Math.round((segment.filled / segment.width) * w) : 0
+    const tip = segment.width > 0 ? Math.round(((segment.filled + segment.tip) / segment.width) * w) : 0
+    const title = segment.phase ? `<title>${escapeXml(capsuleDetails(segment.phase))}</title>` : ''
+    body +=
+      `<g>${title}<rect class="t" x="${x}" width="${w}" height="${BAR_PX_HEIGHT}" rx="${r}"/>` +
+      (tip > fill ? `<rect class="${segment.tone}" opacity="0.45" x="${x}" width="${tip}" height="${BAR_PX_HEIGHT}" rx="${r}"/>` : '') +
+      (fill > 0 ? `<rect class="${segment.tone}" x="${x}" width="${fill}" height="${BAR_PX_HEIGHT}" rx="${r}"/>` : '') +
+      '</g>'
+    x += w + GAP_PX
+  })
+  const source =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${BAR_PX_HEIGHT}" ` +
+    `viewBox="0 0 ${width} ${BAR_PX_HEIGHT}">${svgStyle()}${body}</svg>`
+  return { source, width, height: BAR_PX_HEIGHT }
+}
+
+// --- Width planning -------------------------------------------------------------------
+
+/** Longest title drawn in full; a longer one is cut with an ellipsis. */
+export const TITLE_MAX = 32
+/** The least room worth giving a title or a task. */
+export const TITLE_MIN = 6
+export const TASK_MIN = 12
+export const TASK_MAX = 72
+/** The widest bar: room left once the task is whole goes to the bar, up to this. */
+export const BAR_MAX = 40
+/** Cells kept free at the right edge for the band's own `[-]` marker. */
+export const RIGHT_GUTTER = 4
+/** Cells between two parts of a row. */
+export const GAP = 2
+
+const PCT_W = 4
+const CLOSE_W = 1
+const PHASE_W = 'phase 9/9'.length
+const TOGGLE_W = `${TOGGLE_HOTKEY}: ${TOGGLE_LABEL.shown}`.length
+
+/** What every row of the band draws, and how wide; the same for all rows so they line up. */
+export type BandPlan = {
+  stateWidth: number
+  titleWidth: number
+  barWidth: number
+  /** 0 when the phase tag is dropped. */
+  phaseWidth: number
+  /** 0 when the task is dropped. */
+  taskWidth: number
+  /** True when the toggle ends the first row; false puts it in the footer. */
+  toggleInline: boolean
+}
+
+/**
+ * Decides what fits in `columns` cells for these rows. Parts drop or shrink in a
+ * fixed order (phase tag, bar, task, inline toggle, bar again), then the title
+ * shrinks. While the bare row (state, a short title, bar, percent, close) fits,
+ * the parts and their gaps never take more than `columns - RIGHT_GUTTER`.
+ */
+export function planBand(rows: TrackBar[], columns: number): BandPlan {
+  const width = (Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 80) - RIGHT_GUTTER
+  const stateWidth = Math.max(1, ...rows.map((bar) => stateText(bar.state).length))
+  const titleFull = Math.min(TITLE_MAX, Math.max(1, ...rows.map((bar) => length(shortTitle(bar.title)))))
+  const taskFull = Math.min(
+    TASK_MAX,
+    Math.max(0, ...rows.map((bar) => {
+      const line = taskLine(bar)
+      return line ? length(line.prefix + line.text) : 0
+    })),
+  )
+  const hasPhase = rows.some((bar) => phaseTag(bar) !== null)
+  const ideal = width >= 120 ? 24 : width >= 80 ? 18 : 14
+
+  type Tier = { bar: number, phase: boolean, task: boolean, toggle: boolean }
+  const used = (title: number, tier: Tier): number => {
+    const sizes = [stateWidth, title, tier.bar, PCT_W, CLOSE_W]
+    if (tier.phase) sizes.push(PHASE_W)
+    if (tier.task) sizes.push(Math.min(taskFull, TASK_MIN))
+    if (tier.toggle) sizes.push(TOGGLE_W)
+    return sizes.reduce((sum, size) => sum + size, 0) + GAP * (sizes.length - 1)
+  }
+  const withTask = taskFull > 0
+  const tiers: Tier[] = [
+    { bar: ideal, phase: hasPhase, task: withTask, toggle: true },
+    { bar: ideal, phase: false, task: withTask, toggle: true },
+    { bar: 12, phase: false, task: withTask, toggle: true },
+    { bar: 12, phase: false, task: false, toggle: true },
+    { bar: 12, phase: false, task: false, toggle: false },
+    { bar: 8, phase: false, task: false, toggle: false },
+  ]
+  for (const tier of tiers) {
+    if (used(titleFull, tier) > width) continue
+    // Room left over goes to the task until it is whole, then to the bar, and
+    // what is still left widens the task's region: the controls end the row at
+    // the right edge, and the phase cards drawn over that region get it all
+    let spare = width - used(titleFull, tier)
+    const taskMin = Math.min(taskFull, TASK_MIN)
+    let taskWidth = tier.task ? Math.min(taskFull, taskMin + spare) : 0
+    if (tier.task) spare -= taskWidth - taskMin
+    const grow = Math.max(0, Math.min(BAR_MAX - tier.bar, spare))
+    const barWidth = tier.bar + grow
+    spare -= grow
+    if (tier.task) taskWidth += spare
+    return {
+      stateWidth,
+      titleWidth: titleFull,
+      barWidth,
+      phaseWidth: tier.phase ? PHASE_W : 0,
+      taskWidth,
+      toggleInline: tier.toggle,
     }
   }
-  if (withDots) {
-    if (withCapsules) x += 4
-    for (const dot of compressDots(bar.dots)) {
-      const cx = x + DOT_PX / 2
-      const title = dot.title ? `<title>${escapeXml(dot.title)}</title>` : ''
-      if (dot.status === 'completed') {
-        body += `<circle cx="${cx}" cy="8" r="4" fill="${PALETTE.done.bg}">${title}</circle>`
-      } else if (dot.status === 'in_progress') {
-        body += `<circle cx="${cx}" cy="8" r="3.5" fill="#FFFFFF" stroke="${PALETTE.running.bg}" stroke-width="2">${title}</circle>`
-      } else {
-        body += `<circle cx="${cx}" cy="8" r="3.5" fill="none" stroke="${PALETTE.idle.bg}" stroke-width="1.5">${title}</circle>`
-      }
-      x += DOT_PX
-    }
-  }
-  const width = Math.max(x, 1)
-  const source = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="16" viewBox="0 0 ${width} 16">${body}</svg>`
-  return { source, width }
+  // Nothing optional left: the title takes what remains
+  const bare: Tier = { bar: 8, phase: false, task: false, toggle: false }
+  const titleWidth = Math.max(1, Math.min(titleFull, width - used(0, bare)))
+  return { stateWidth, titleWidth, barWidth: 8, phaseWidth: 0, taskWidth: 0, toggleInline: false }
+}
+
+/**
+ * How many bar rows to draw out of `candidates`, at most `max`: a footer row is
+ * kept when the toggle cannot sit on the first row or when rows are cut.
+ */
+export function rowCapacity(maxRows: number, candidates: number, toggleInline: boolean, max = 3): number {
+  const rows = Number.isFinite(maxRows) ? Math.max(0, Math.floor(maxRows)) : 12
+  const fitsAll = candidates <= Math.min(max, rows)
+  if (toggleInline && fitsAll) return candidates
+  return Math.max(0, Math.min(max, candidates, rows - 1))
 }
 
 // --- Elements ----------------------------------------------------------------------------
@@ -284,110 +443,157 @@ export type BandInput = {
   onToggle: () => void
 }
 
-function chip({ Text }: UiElements, state: TrackState) {
-  const swatch = PALETTE[state]
-  return Text({ color: swatch.fg, backgroundColor: swatch.bg, bold: true, children: [chipText(state)] })
-}
-
 function cell(Box: any, width: number, child: unknown, key?: string) {
   return Box({ ...(key ? { key } : {}), width, flexShrink: 0, children: [child] })
 }
 
-// One capsule with its hover card: the card is drawn hidden below the capsule and
-// shown while the pointer is over the capsule's keyed Box. Terminal only.
-function terminalCapsule(ui: UiElements, bar: TrackBar, capsule: Capsule, index: number) {
+function toggleButton(input: BandInput) {
+  return input.ui.Button({
+    key: 'toggle',
+    label: input.showBars ? TOGGLE_LABEL.shown : TOGGLE_LABEL.hidden,
+    hotkey: TOGGLE_HOTKEY,
+    plain: true,
+    dimColor: true,
+    onPress: () => input.onToggle(),
+  })
+}
+
+// The hover group that ties a run of the bar to its phase card (64 characters at most)
+const phaseScope = (bar: TrackBar, index: number): string => `phase:${index}:${bar.id}`.slice(0, 64)
+
+// One run of the terminal bar. Each cell joins the run's hover group: the
+// pointer on it lights the run (the empty cells brighten) and reveals the
+// phase card that buildRow lays over the row's phase and task.
+function terminalSegment(ui: UiElements, bar: TrackBar, segment: Segment, index: number) {
   const { Box, Text } = ui
-  const swatch = CAPSULE[capsule.state]
+  const cells = segmentCells(segment)
+  const scope = segment.phase === null ? null : phaseScope(bar, index)
+  const lit = (color: string) => (scope === null ? {} : { hover: { scope, color } })
   return Box({
-    key: `phase-${bar.id}-${index}`,
     flexShrink: 0,
     children: [
-      Text({
-        color: swatch.fg,
-        backgroundColor: swatch.bg,
-        children: [` ${CAPSULE_GLYPH[capsule.state]}${capsule.number} `],
-      }),
-      Box({
-        position: 'absolute',
-        top: 1,
-        left: 0,
-        display: 'none',
-        hover: { display: 'flex' },
-        backgroundColor: CARD.bg,
-        children: [Text({ color: CARD.fg, backgroundColor: CARD.bg, wrap: 'truncate', children: [' ' + capsuleDetails(capsule) + ' '] })],
-      }),
+      ...(cells.filled !== '' ? [Text({ color: segment.color, ...lit(segment.color), children: [cells.filled] })] : []),
+      ...(cells.empty !== '' ? [Text({ color: TRACK_KEY, ...lit(MUTED_COLOR), children: [cells.empty] })] : []),
     ],
   })
 }
 
-function terminalDots(ui: UiElements, bar: TrackBar) {
-  const text = compressDots(bar.dots)
-    .map((dot) => DOT_GLYPH[dot.status])
-    .join('')
-  return ui.Text({ children: [text] })
-}
-
-/** One track's row. */
-export function buildRow(input: BandInput, bar: TrackBar) {
-  const { ui, desktop } = input
-  const { Box, Text, Button, Svg } = ui
-  const plan = planRow(bar, input.columns, desktop)
-  const useSvg = desktop && typeof Svg === 'function'
-  const parts: unknown[] = [
-    chip(ui, bar.state),
-    cell(Box, plan.titleWidth, Text({ bold: true, wrap: 'truncate-end', children: [bar.title] })),
-  ]
-
-  if (useSvg) {
-    const drawn = barSvg(bar.percent, bar.state, plan.barWidth)
-    parts.push(Svg({ source: drawn.source, alt: summary(bar), width: drawn.width, height: 10 }))
-  } else {
-    const cells = barCells(bar.percent, plan.barWidth)
-    parts.push(
+// The phase cards of a row: drawn hidden over the row's phase and task, one per
+// run, each shown while its run is hovered. Padded to the full width so the card
+// covers the words beneath it. Inside the row, so the band never clips it.
+function phaseCards(ui: UiElements, bar: TrackBar, segments: Segment[], width: number) {
+  const { Box, Text } = ui
+  const cards: unknown[] = []
+  segments.forEach((segment, index) => {
+    if (segment.phase === null) return
+    const words = clip(phaseCardText(segment.phase), width).padEnd(width)
+    cards.push(
       Box({
-        flexShrink: 0,
-        // An empty string is no child: a bar at 0% or 100% has one run only
-        children: [
-          ...(cells.filled !== '' ? [Text({ color: PALETTE[bar.state].bg, children: [cells.filled] })] : []),
-          ...(cells.empty !== '' ? [Text({ color: TRACK_COLOR, dimColor: true, children: [cells.empty] })] : []),
-        ],
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        display: 'none',
+        hover: { scope: phaseScope(bar, index), display: 'flex' },
+        children: [Text({ bold: true, wrap: 'truncate-end', children: [words] })],
       }),
     )
-  }
-  parts.push(cell(Box, PCT_W, Text({ children: [`${bar.percent}%`.padStart(PCT_W)] })))
+  })
+  return cards
+}
 
-  if (useSvg && (plan.capsules || plan.dots)) {
-    const drawn = phasesSvg(bar, plan.capsules, plan.dots)
-    parts.push(Svg({ source: drawn.source, alt: summary(bar), width: drawn.width, height: 16, isInteractive: true }))
-  } else if (plan.capsules || plan.dots) {
-    const inner: unknown[] = []
-    if (plan.capsules) bar.phases.forEach((capsule, index) => inner.push(terminalCapsule(ui, bar, capsule, index)))
-    if (plan.dots) inner.push(terminalDots(ui, bar))
-    parts.push(Box({ flexShrink: 0, columnGap: 1, children: inner }))
+function barElement(input: BandInput, bar: TrackBar, width: number) {
+  const { Box, Svg } = input.ui
+  if (input.desktop && typeof Svg === 'function') {
+    const drawn = barSvg(bar, width)
+    return Svg({ source: drawn.source, alt: summary(bar), width: drawn.width, height: drawn.height, isInteractive: true })
+  }
+  return Box({
+    flexShrink: 0,
+    columnGap: 1,
+    children: segmentsOf(bar, width).map((segment, index) => terminalSegment(input.ui, bar, segment, index)),
+  })
+}
+
+/** One track's row. `first` rows end with the toggle when the plan puts it inline. */
+export function buildRow(input: BandInput, bar: TrackBar, plan: BandPlan, first: boolean) {
+  const { Box, Text, Button } = input.ui
+  const color = STATE_COLOR[bar.state]
+  const parts: unknown[] = [
+    cell(Box, plan.stateWidth, Text({ color, bold: true, children: [stateText(bar.state)] })),
+    cell(Box, plan.titleWidth, Text({ bold: true, wrap: 'truncate-end', children: [shortTitle(bar.title)] })),
+    barElement(input, bar, plan.barWidth),
+    cell(Box, PCT_W, Text({ ...(bar.state === 'done' ? { color } : {}), children: [`${bar.percent}%`.padStart(PCT_W)] })),
+  ]
+
+  // The phase tag and the task share one region, where the phase cards open
+  const info: unknown[] = []
+  if (plan.phaseWidth > 0) {
+    info.push(cell(Box, plan.phaseWidth, Text({ color: MUTED_COLOR, children: [phaseTag(bar) ?? ''] })))
+  }
+  const line = taskLine(bar)
+  if (plan.taskWidth > 0) {
+    const words = line
+      ? [
+          ...(line.prefix !== '' ? [Text({ color: MUTED_COLOR, children: [line.prefix] })] : []),
+          Text({
+            ...(line.dim ? { color: MUTED_COLOR } : line.color ? { color: line.color } : {}),
+            wrap: 'truncate-end',
+            children: [clip(line.text, Math.max(1, plan.taskWidth - length(line.prefix)))],
+          }),
+        ]
+      : []
+    info.push(Box({ width: plan.taskWidth, flexShrink: 0, children: words }))
+  }
+  if (info.length > 0) {
+    const width = plan.phaseWidth + plan.taskWidth + (info.length > 1 ? GAP : 0)
+    const terminal = !(input.desktop && typeof input.ui.Svg === 'function')
+    const cards = terminal ? phaseCards(input.ui, bar, segmentsOf(bar, plan.barWidth), width) : []
+    parts.push(Box({ width, flexShrink: 0, columnGap: GAP, children: [...info, ...cards] }))
   }
 
-  if (plan.pillWidth > 0 && bar.pill) {
-    parts.push(cell(Box, plan.pillWidth, Text({ dimColor: true, wrap: 'truncate-end', children: [clip(bar.pill.text, PILL_MAX)] })))
+  parts.push(
+    Button({ key: `close-${bar.id}`, label: '✕', plain: true, dimColor: true, onPress: () => input.onClose(bar) }),
+  )
+  if (plan.toggleInline) {
+    parts.push(first ? toggleButton(input) : Box({ width: TOGGLE_W, flexShrink: 0 }))
   }
+  return Box({ key: `bar-${bar.id}`, flexDirection: 'row', columnGap: GAP, children: parts })
+}
 
-  parts.push(Button({ key: `close-${bar.id}`, label: '✕', onPress: () => input.onClose(bar) }))
-  return Box({ key: `bar-${bar.id}`, flexDirection: 'row', columnGap: 1, children: parts })
+/** The hidden band's one line: the toggle and a dim word on the first track. */
+function hiddenLine(input: BandInput) {
+  const { Box, Text } = input.ui
+  const first = input.rows[0]
+  const children: unknown[] = [toggleButton(input)]
+  if (first) {
+    const words = `${STATE_GLYPH[first.state]} ${clip(shortTitle(first.title), TITLE_MAX)} ${first.percent}%`
+    children.push(Text({ color: MUTED_COLOR, wrap: 'truncate-end', children: [words] }))
+  }
+  if (input.more > 0 || input.rows.length > 1) {
+    const others = input.more + Math.max(0, input.rows.length - 1)
+    children.push(Text({ color: MUTED_COLOR, children: [`+${others} more`] }))
+  }
+  return Box({ flexDirection: 'row', columnGap: GAP, children })
 }
 
 /**
- * The whole band: the bar rows, a footer with "+N more" and the Conductor toggle,
- * then the engine's own drawing. Never throws away `input.engine`.
+ * The whole band: the bar rows, a footer when it is needed ("+N more", or the
+ * toggle when it does not fit on the first row), then the engine's own drawing.
+ * Never throws away `input.engine`.
  */
 export function buildBand(input: BandInput) {
-  const { Box, Text, Button } = input.ui
+  const { Box, Text } = input.ui
+  if (!input.showBars) {
+    return Box({ flexDirection: 'column', children: [hiddenLine(input), input.engine] })
+  }
+  const plan = planBand(input.rows, input.columns)
   const footer: unknown[] = []
-  if (input.more > 0) footer.push(Text({ dimColor: true, children: [`+${input.more} more`] }))
-  footer.push(
-    Button({ key: 'toggle', label: 'Conductor', hotkey: '9', plain: true, dimColor: true, onPress: () => input.onToggle() }),
-  )
-  const rows = input.showBars ? input.rows.map((bar) => buildRow(input, bar)) : []
+  if (!plan.toggleInline) footer.push(toggleButton(input))
+  if (input.more > 0) footer.push(Text({ color: MUTED_COLOR, children: [`+${input.more} more`] }))
+  const hasFooter = footer.length > 0
+  const rows = input.rows.map((bar, index) => buildRow(input, bar, plan, index === 0))
   return Box({
     flexDirection: 'column',
-    children: [...rows, Box({ flexDirection: 'row', columnGap: 2, children: footer }), input.engine],
+    children: [...rows, ...(hasFooter ? [Box({ flexDirection: 'row', columnGap: GAP, children: footer })] : []), input.engine],
   })
 }

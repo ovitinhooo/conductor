@@ -6,12 +6,12 @@
 // It also draws the bars at `AbovePrompt` and keeps them fresh with a timer and
 // after tool calls. It also serves `/conductor-progress` and
 // `/conductor-progress-sound`, the band toggle button, and the choices saved per
-// user in `$.store`. The sounds are added in a later task.
+// user in `$.store`, and plays a sound when a track needs input or finishes.
 //
 // Rules of the mods validator that shape this file: `$` is passed only to
 // functions declared at the top level of this file, never destructured or
 // stored, and every call is written in full (`$.process.run(...)`).
-import { buildBand, rowCapacity } from './layout.ts'
+import { buildBand, planBand, rowCapacity } from './layout.ts'
 import {
   barFromEntry,
   buildBar,
@@ -449,18 +449,18 @@ function drawBand($: any, e: any, engine: unknown): unknown {
   // Any track the bars could show decides whether the band is ours at all
   const any = selectRows(state.bars, { finished: state.finished }, MAX_ROWS)
   if (any.rows.length + any.more === 0) return null
-  const { rows, more } = selectRows(
-    state.bars,
-    { dismissals: state.dismissals, finished: state.finished },
-    rowCapacity(e.props.maxRows, MAX_ROWS),
-  )
+  // Every shown candidate first, then as many rows as the band has room for
+  const all = selectRows(state.bars, { dismissals: state.dismissals, finished: state.finished }, Infinity).rows
+  const inline = planBand(all.slice(0, MAX_ROWS), e.props.bodyColumns).toggleInline
+  const room = view.visible ? rowCapacity(e.props.maxRows, all.length, inline, MAX_ROWS) : all.length
+  const rows = all.slice(0, room)
   const { Box, Text, Button, Svg } = $.ui.resolve(e)
   return buildBand({
     ui: { Box, Text, Button, Svg },
     desktop: e.surface === 'desktop',
     columns: e.props.bodyColumns,
     rows,
-    more,
+    more: all.length - rows.length,
     showBars: view.visible,
     engine,
     onClose: (bar: TrackBar) => closeBar($, bar),

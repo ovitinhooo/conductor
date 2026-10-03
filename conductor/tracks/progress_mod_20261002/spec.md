@@ -18,13 +18,18 @@ without mod support ignore it, so the skills keep working unchanged.
    button, the commands and the sounds. It loads directly, with no build step.
 2. **Track bars.** One row per active track (status `in_progress`; if none, the
    first `pending` track), at most 3 rows with a "+N more" indicator. Each row
-   shows: state glyph, track title, progress bar, percent, and a close button.
-3. **Phases and tasks.** Phases render as capsules and tasks as dots, filled as
-   tasks complete. A pill on the bar names the current phase and task
-   (`current_task`, else `next_task`). Hovering a phase capsule shows its title,
-   completed/total counts and its checkpoint SHA when one is recorded. Dots show
-   status only (the in-progress dot is titled), because the state script reports
-   per-phase counts, not a task list.
+   shows: state glyph and label, a short track title (the name before a colon),
+   a progress bar, percent, the current phase (`phase n/N`), the task, and a
+   close button. The columns line up from row to row, and the controls end the
+   row at the right edge, clear of the band's own `[-]` marker.
+3. **Phases and tasks.** The bar has one segment per phase, sized by its task
+   count and filled as its tasks complete; a tip marks the task in progress. The
+   task names the current task (`current_task`, else `next: ` and `next_task`);
+   a track in `needs_input` says it is waiting for the user to verify the phase.
+   Hovering a phase segment shows its title, completed/total counts and its
+   checkpoint SHA when one is recorded, in place of the row's phase and task on
+   the terminal (so the band never clips it) and as an Svg tooltip on the
+   desktop. The state script reports per-phase counts, not a task list.
 4. **Derived states.** `running`: a task is `[~]`. `needs_input`: the current task
    is a phase-verification task (Conductor is waiting for the user to confirm).
    `done`: all tasks are complete or the track status is completed (bar turns
@@ -85,11 +90,15 @@ without mod support ignore it, so the skills keep working unchanged.
   the host. A load failure must not affect the skills.
 - **Performance:** a refresh never blocks rendering; refresh work is throttled and
   skipped while the files are unchanged.
-- **Accessibility:** state colors keep at least 4.5:1 contrast for the text on
-  them, and state is never conveyed by color alone (glyph plus label).
+- **Accessibility:** terminal colors are theme keys (`success`, `warning`,
+  `suggestion`, `inactive`, `subtle`), so they follow the user's light, dark or
+  colorblind theme; the desktop Svg carries a light and a dark palette whose
+  fills keep at least 3:1 against the page and the empty track. State is never
+  conveyed by color alone (glyph plus label, and the percent).
 - **Compatibility:** works in the desktop app (bars drawn as `Svg`) and the
-  terminal (`Box`/`Text`); narrow widths degrade (drop the pill, then the dots)
-  instead of overflowing. On Claude Code older than 2.1.287 the skills must keep
+  terminal (`Box`/`Text`); narrow widths degrade (drop the phase tag, shrink the
+  bar, drop the task, then move the toggle to a footer row) instead of
+  overflowing. On Claude Code older than 2.1.287 the skills must keep
   working. This could not be verified (2.1.286 needs a login before plugins
   load), so it is documented as unverified. If the rollout flag is off, the mod
   does not load and the skills are unaffected.
@@ -179,6 +188,11 @@ script, and `$.store` for per-user persistence.
   analyses it with the manifest at the repo root; document the remote rollout
   switch and the unverified older-version behavior; fix a stale "stub-engine"
   acceptance criterion (Task 2 findings in `notes.md`).
+- 2026-10-03: UI refresh after a live review in the terminal: a segmented bar
+  per phase replaces the bar, capsules and dots; theme-key colors replace fixed
+  hex chips; aligned columns, short titles, an explicit needs-input line and the
+  toggle on the first row (footer row only when needed); a right gutter fixes the
+  close button being clipped by the band's `[-]` marker.
 - 2026-10-03: Hover details are phase-level only (title, counts, checkpoint SHA);
   dots show status only, because `status` has no per-task list and the model tests
   already build dots from per-phase counts (decision after task 4).
