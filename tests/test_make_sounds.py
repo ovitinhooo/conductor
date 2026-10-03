@@ -132,6 +132,16 @@ class CliTest(unittest.TestCase):
           self.assertEqual(f1.read(), f2.read())
 
 
+# The samples come from math.sin, whose last bit can differ between platforms
+# and libm versions; after rounding to 16 bits a sample may then be off by one
+# step. A byte-for-byte comparison with the committed file could fail on a CI
+# runner for that reason alone, so the drift check compares the headers and the
+# length exactly and the samples within this many steps. A real change to the
+# tones moves samples by far more. The same-run determinism tests stay exact.
+SAMPLE_TOLERANCE = 2
+HEADER_BYTES = 44
+
+
 class CommittedSoundsTest(unittest.TestCase):
 
   def test_committed_files_match_a_fresh_render(self):
@@ -140,7 +150,17 @@ class CommittedSoundsTest(unittest.TestCase):
         path = os.path.join(_REPO, "sounds", name + ".wav")
         self.assertTrue(os.path.isfile(path), "run scripts/make_sounds.py")
         with open(path, "rb") as f:
-          self.assertEqual(f.read(), make_sounds.render(name))
+          committed = f.read()
+        fresh = make_sounds.render(name)
+        self.assertEqual(committed[:HEADER_BYTES], fresh[:HEADER_BYTES])
+        self.assertEqual(len(committed), len(fresh))
+        committed_format = read_wav(committed)[:3]
+        self.assertEqual(committed_format, read_wav(fresh)[:3])
+        worst = max(abs(a - b) for a, b in zip(read_wav(committed)[3],
+                                               read_wav(fresh)[3]))
+        self.assertLessEqual(
+            worst, SAMPLE_TOLERANCE,
+            "run scripts/make_sounds.py: the sounds drifted from the script")
 
 
 if __name__ == "__main__":
