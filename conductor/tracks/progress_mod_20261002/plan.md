@@ -53,18 +53,23 @@
     - [ ] `lint_skills.py` reports a `hooks.json` without exactly one existing module path, or a missing `types` file, and passes on the valid layout (extend `tests/test_lint_skills.py`)
 - [ ] Task: Implement the lint checks and wire the plugin
     - [ ] Final `hooks/hooks.json` (plus `types/index.d.ts` and the `types` field only if `$.state` is used); keep `VERSION` in sync and `marketplace.json` free of `version`
+- [ ] Task: Write failing tests for the staged-copy validation script
+    - [ ] `tests/test_validate_mod.py`: staging copies the repo without `.git`, the generated `tsconfig.json` and `.claude-plugin/types`, places the root `plugin.json` at `.claude-plugin/plugin.json`, and leaves the original tree untouched
+    - [ ] The `claude` command is injectable so the test stubs it; a stubbed "Validation passed" with no `hooks:` line fails, and one that lists hooks passes
+- [ ] Task: Implement `scripts/validate_mod.py`
+    - [ ] Standard library only; runs `claude plugin validate` in the staged copy (`claude` locally, `npx -y @anthropic-ai/claude-code` in CI) and requires the module's `hooks:` line
 - [ ] Task: Add the mod tests to CI
-    - [ ] CI job in `.github/workflows/ci.yml` (Node 22, no `typescript`) running `npx -y @anthropic-ai/claude-code plugin test` and `plugin validate .`
+    - [ ] CI job in `.github/workflows/ci.yml` (Node 22, no `typescript`) running `npx -y @anthropic-ai/claude-code plugin test`, `plugin validate .` and `python3 scripts/validate_mod.py`
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 5: Documentation and Live Verification
 
 - [ ] Task: Document the mod
     - [ ] README section: what the bars show, states, commands, desktop vs terminal, fail-soft behavior, opt-out
-    - [ ] State the minimum Claude Code version (2.1.287), the tested version, and that mod events and methods can change between releases
-    - [ ] `CONTRIBUTING.md`: mod test commands; manual live checklist file under the mod's tests
+    - [ ] State the minimum Claude Code version (2.1.287), the tested version, that mod events and methods can change between releases, that Anthropic can switch mods off remotely (the skills keep working), and that older-than-2.1.287 skill loading is unverified
+    - [ ] `CONTRIBUTING.md`: mod test and staged-validation commands; manual live checklist file under the mod's tests
 - [ ] Task: Run the manual live checklist
     - [ ] In a real session with a throwaway track: bars update with no tool calls, needs-input and done sounds play once, commands and button work, restart keeps the settings, no-Conductor and no-Python cases stay quiet
 - [ ] Task: Final checks
-    - [ ] `python3 -m unittest discover -s tests`, `python3 scripts/lint_skills.py`, the mod tests and plugin validation all pass
+    - [ ] `python3 -m unittest discover -s tests`, `python3 scripts/lint_skills.py`, the mod tests, plugin validation and `python3 scripts/validate_mod.py` all pass
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)

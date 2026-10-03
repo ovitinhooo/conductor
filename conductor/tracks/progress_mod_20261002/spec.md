@@ -52,8 +52,13 @@ without mod support ignore it, so the skills keep working unchanged.
     per user in `$.store`, never written to the repository.
 12. **Plugin integration.** `plugin.json`, `marketplace.json`, `VERSION`,
     `lint_skills.py` and CI stay consistent: the linter validates that
-    `hooks.json` lists exactly one module path that exists (and any `types` file),
-    and `claude plugin validate` passes and lists the module's hooks and `$` calls.
+    `hooks.json` lists exactly one module path that exists (and any `types` file).
+    The manifest stays at the root `plugin.json`, where plain `claude plugin
+    validate .` only checks the marketplace manifest. A small script therefore
+    stages a temporary copy of the repo with `plugin.json` placed at
+    `.claude-plugin/plugin.json` and runs `claude plugin validate` there; it fails
+    unless the output lists the module's hooks and `$` calls. CI runs both, and
+    `CONTRIBUTING.md` documents it.
 13. **Tests.** Tests are `*.test.ts` files run by the official `claude plugin
     test` harness, in CI through `npx -y @anthropic-ai/claude-code plugin test`.
     They cover the plan-to-bar model (a pure file that never touches `$`): state
@@ -63,7 +68,10 @@ without mod support ignore it, so the skills keep working unchanged.
 14. **Docs.** The README gets a section on the mod (what it shows, commands, how it
     behaves in the desktop app and the terminal), states the minimum Claude Code
     version (2.1.287, when mods arrived) and the version it was tested with
-    because mod events and methods can change between releases, and
+    because mod events and methods can change between releases, says that
+    Anthropic can switch mods off remotely (a rollout flag; the skills keep
+    working), notes that skill loading on Claude Code older than 2.1.287 is
+    unverified, and
     `CONTRIBUTING.md` documents the new test commands.
 
 ## Non-Functional Requirements
@@ -80,7 +88,9 @@ without mod support ignore it, so the skills keep working unchanged.
 - **Compatibility:** works in the desktop app (bars drawn as `Svg`) and the
   terminal (`Box`/`Text`); narrow widths degrade (drop the pill, then the dots)
   instead of overflowing. On Claude Code older than 2.1.287 the skills must keep
-  working; this is verified, or recorded as unverified in the track notes.
+  working. This could not be verified (2.1.286 needs a login before plugins
+  load), so it is documented as unverified. If the rollout flag is off, the mod
+  does not load and the skills are unaffected.
 - **No new runtime dependencies** for Python users; the mod is the only
   TypeScript in the repository, needs no build step or `typescript` package, and
   Node is needed only to run `claude plugin test` in CI.
@@ -101,7 +111,8 @@ without mod support ignore it, so the skills keep working unchanged.
 - Removing Python or breaking the state script output leaves Claude Code usable
   and the skills unaffected.
 - `python3 -m unittest discover -s tests`, `python3 scripts/lint_skills.py`, the
-  mod's stub-engine tests and `claude plugin validate .` all pass in CI.
+  mod's `claude plugin test` suite, `claude plugin validate .` and the staged-copy
+  validation (which lists the module's hooks and calls) all pass in CI.
 
 ## Out of Scope
 
@@ -115,6 +126,7 @@ without mod support ignore it, so the skills keep working unchanged.
 - Antigravity UI support.
 - A `SessionMode` footer item and panes (v1 draws only in the band above the
   prompt).
+- Moving the manifest to `.claude-plugin/plugin.json`.
 
 ## References
 
@@ -158,3 +170,8 @@ script, and `$.store` for per-user persistence.
   engine, `$.store` persistence, `$.process.run` data access, `register(on)` with
   `$`, a `$.clock.every` redraw timer, and a minimum-version requirement (API
   spike findings in `notes.md`).
+- 2026-10-02: Validate the mod module through a staged copy with the manifest at
+  `.claude-plugin/plugin.json`, because plain `claude plugin validate .` never
+  analyses it with the manifest at the repo root; document the remote rollout
+  switch and the unverified older-version behavior; fix a stale "stub-engine"
+  acceptance criterion (Task 2 findings in `notes.md`).
