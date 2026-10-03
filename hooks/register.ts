@@ -4,8 +4,9 @@
 // the client that reads track progress: it runs `scripts/conductor_state.py`
 // through `$.process.run` and hands plain data to the pure model in model.ts.
 // It also draws the bars at `AbovePrompt` and keeps them fresh with a timer and
-// after tool calls. The commands, the band toggle's action, the saved choices
-// and the sounds are added in later tasks.
+// after tool calls. It also serves `/conductor-progress` and
+// `/conductor-progress-sound`, the band toggle button, and the choices saved per
+// user in `$.store`. The sounds are added in a later task.
 //
 // Rules of the mods validator that shape this file: `$` is passed only to
 // functions declared at the top level of this file, never destructured or
@@ -252,8 +253,24 @@ export async function refreshBars($: any, options: RefreshOptions): Promise<Snap
 
 // --- What the module remembers between draws -----------------------------------------------
 
-/** The user's choices: bars shown, sounds muted. Task 10 loads and saves them with `$.store`. */
+/** The user's choices: bars shown, sounds muted. Loaded from `$.store` at session.start, saved on every toggle. */
 const view = { visible: true, muted: false }
+
+/** `$.store` keys of the two choices (booleans; anything else counts as unset). */
+export const STORE_VISIBLE = 'progress.visible'
+export const STORE_MUTED = 'progress.muted'
+
+/** The slash commands registered at session.start. */
+export const COMMAND_PROGRESS = 'conductor-progress'
+export const COMMAND_SOUND = 'conductor-progress-sound'
+
+/** The text each command answers with. */
+export const REPLIES = {
+  hidden: 'Conductor progress bars hidden',
+  shown: 'Conductor progress bars shown',
+  muted: 'Conductor progress sound muted',
+  unmuted: 'Conductor progress sound unmuted',
+}
 
 type ModuleState = {
   /** The bars of the last refresh, one per registry row. */
@@ -338,6 +355,71 @@ function closeBar($: any, bar: TrackBar): void {
   $.ui.invalidate('ui.render')
 }
 
+// --- Choices: saved per user in $.store ----------------------------------------------------------
+
+// A saved choice counts only when it is a boolean; anything else is unset
+const savedChoice = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback)
+
+// Reads one saved choice; a store that fails reads as unset
+async function readChoice($: any, key: string, fallback: boolean): Promise<boolean> {
+  try {
+    return savedChoice(await $.store.get(key), fallback)
+  } catch {
+    return fallback
+  }
+}
+
+// Saves one choice; the choice stays in effect for this session even if the write fails
+async function writeChoice($: any, key: string, value: boolean): Promise<void> {
+  try {
+    await $.store.set(key, value)
+  } catch {
+    // not saved: the next session starts from the defaults
+  }
+}
+
+/** Loads both choices once, at session.start. Never throws. */
+async function loadChoices($: any): Promise<void> {
+  view.visible = await readChoice($, STORE_VISIBLE, true)
+  view.muted = await readChoice($, STORE_MUTED, false)
+}
+
+/**
+ * Shows or hides the bars (the band toggle and /conductor-progress), redraws and
+ * saves the choice. Returns the command's answer. Never throws.
+ */
+async function toggleBars($: any): Promise<string> {
+  view.visible = !view.visible
+  const visible = view.visible
+  try {
+    $.ui.invalidate('ui.render')
+  } catch {
+    // the next draw shows it
+  }
+  await writeChoice($, STORE_VISIBLE, visible)
+  return visible ? REPLIES.shown : REPLIES.hidden
+}
+
+/**
+ * Mutes or unmutes the sounds (/conductor-progress-sound) and saves the choice.
+ * Returns the command's answer. Never throws.
+ */
+async function toggleSound($: any): Promise<string> {
+  view.muted = !view.muted
+  const muted = view.muted
+  await writeChoice($, STORE_MUTED, muted)
+  return muted ? REPLIES.muted : REPLIES.unmuted
+}
+
+// Registers one slash command; a failure leaves the other command and the session alone
+async function registerCommand($: any, name: string, description: string): Promise<void> {
+  try {
+    await $.command.register({ name, description, immediate: true })
+  } catch {
+    // the command is missing; the band button still works
+  }
+}
+
 // --- Drawing --------------------------------------------------------------------------------
 
 /**
@@ -363,8 +445,10 @@ function drawBand($: any, e: any, engine: unknown): unknown {
     showBars: view.visible,
     engine,
     onClose: (bar: TrackBar) => closeBar($, bar),
-    // The toggle's action (show or hide, and remember the choice) comes with the commands
-    onToggle: () => {},
+    // The same action as /conductor-progress
+    onToggle: () => {
+      void toggleBars($)
+    },
   })
 }
 
@@ -377,13 +461,22 @@ export function register(on: any) {
   view.visible = true
   view.muted = false
 
-  // Runs when the session starts. The debug log is invisible to users, the timer
-  // keeps the bars current, and `next(e)` lets the session start as usual.
+  // Runs when the session starts. The saved choices are loaded first (they decide
+  // the first draw), the commands are registered, the debug log is invisible to
+  // users, the timer keeps the bars current, and `next(e)` lets the session start
+  // as usual. Nothing here may stop the session from starting.
   on('session.start', async ($: any, e: any, next: any) => {
+    await loadChoices($)
+    await registerCommand($, COMMAND_PROGRESS, 'Show or hide the Conductor progress bars')
+    await registerCommand($, COMMAND_SOUND, 'Mute or unmute the Conductor progress sounds')
     $.ui.log('conductor progress mod loaded', { to: 'debug' })
     startRefresh($)
     return next(e)
   })
+
+  // The two commands answer with their own text and never run the engine's
+  on('command.run', { command: 'conductor-progress' }, async ($: any) => ({ text: await toggleBars($) }))
+  on('command.run', { command: 'conductor-progress-sound' }, async ($: any) => ({ text: await toggleSound($) }))
 
   // The bars, in the band above the prompt. The engine's own drawing (other mods'
   // too) is kept: `next(e)` is awaited once and its result placed inside our tree.
