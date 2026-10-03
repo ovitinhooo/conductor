@@ -6,10 +6,10 @@
     - [x] Load `zycck/claude-mods` `plan-progress` in a scratch session and confirm: `hooks.json` `modules`, the `claude-code` import (atoms, footer button, slash commands, sound playback, per-user storage), and desktop vs terminal behavior
     - [x] Confirm whether a module can spawn `python3` (Assumption 3) and note the fallback if not
     - [x] Record the findings, and any spec changes they force, in `conductor/tracks/progress_mod_20261002/notes.md`; run `conductor-revise` if the spec must change
-- [ ] Task: Check plugin validation with a minimal module
-    - [ ] Add `hooks/hooks.json` + a no-op `hooks/register.ts`; run `claude plugin validate .` and confirm it reports the module's hooks and `$` calls
-    - [ ] Load the repo with `claude --plugin-dir .` and confirm the skills still load and `/plugin` lists the mod
-    - [ ] Check the mods troubleshooting docs for Claude Code older than 2.1.287; if an older release can run in a throwaway directory, confirm the skills still load, otherwise record "unverified" in `notes.md`
+- [x] Task: Check plugin validation with a minimal module 7469c3a
+    - [x] Add `hooks/hooks.json` + a no-op `hooks/register.ts`; run `claude plugin validate .` and confirm it reports the module's hooks and `$` calls
+    - [x] Load the repo with `claude --plugin-dir .` and confirm the skills still load and `/plugin` lists the mod
+    - [x] Check the mods troubleshooting docs for Claude Code older than 2.1.287; if an older release can run in a throwaway directory, confirm the skills still load, otherwise record "unverified" in `notes.md`
 - [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 
 ## Phase 2: Progress Model (pure logic)
