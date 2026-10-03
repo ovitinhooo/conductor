@@ -34,11 +34,11 @@
 - [x] Task: Write failing `claude plugin test` scenarios for the module 5932687
     - [x] Read the mods test docs first (stubbing `$.process`/`$.store`, testing drawings and timers)
     - [x] Scenarios: bars appear at `AbovePrompt`, update on file change, hide with `/conductor-progress`, mute with `/conductor-progress-sound`, band button, close button, no Conductor dir renders nothing
-- [ ] Task: Implement the bars and refresh loop
-    - [ ] `ui.render` at `AbovePrompt`, keeping other mods' drawing with `await next(e)`; `Svg` on desktop, `Box`/`Text` on terminal
-    - [ ] Row layout: glyph, title, bar, percent, close; phase capsules, task dots, pill; phase-level hover (title, counts, checkpoint SHA) where the surface supports it
-    - [ ] `$.clock.every` timer and tool-call hook calling `$.ui.invalidate('ui.render')`; narrow-width degradation
-    - [ ] Colors meeting 4.5:1 contrast; glyph plus label for every state
+- [x] Task: Implement the bars and refresh loop 0619daf
+    - [x] `ui.render` at `AbovePrompt`, keeping other mods' drawing with `await next(e)`; `Svg` on desktop, `Box`/`Text` on terminal
+    - [x] Row layout: glyph, title, bar, percent, close; phase capsules, task dots, pill; phase-level hover (title, counts, checkpoint SHA) where the surface supports it
+    - [x] `$.clock.every` timer and tool-call hook calling `$.ui.invalidate('ui.render')`; narrow-width degradation
+    - [x] Colors meeting 4.5:1 contrast; glyph plus label for every state
 - [ ] Task: Implement commands, footer button and persistence
     - [ ] `/conductor-progress`, `/conductor-progress-sound` with `$.command.register`, and a "Conductor" `Button` with a hotkey in the band
     - [ ] Persist show/hide and mute per user in `$.store`, loaded at `session.start`
