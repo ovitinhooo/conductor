@@ -39,9 +39,9 @@
     - [x] Row layout: glyph, title, bar, percent, close; phase capsules, task dots, pill; phase-level hover (title, counts, checkpoint SHA) where the surface supports it
     - [x] `$.clock.every` timer and tool-call hook calling `$.ui.invalidate('ui.render')`; narrow-width degradation
     - [x] Colors meeting 4.5:1 contrast; glyph plus label for every state
-- [ ] Task: Implement commands, footer button and persistence
-    - [ ] `/conductor-progress`, `/conductor-progress-sound` with `$.command.register`, and a "Conductor" `Button` with a hotkey in the band
-    - [ ] Persist show/hide and mute per user in `$.store`, loaded at `session.start`
+- [x] Task: Implement commands, footer button and persistence 0700d68
+    - [x] `/conductor-progress`, `/conductor-progress-sound` with `$.command.register`, and a "Conductor" `Button` with a hotkey in the band
+    - [x] Persist show/hide and mute per user in `$.store`, loaded at `session.start`
 - [ ] Task: Add the sounds
     - [ ] `scripts/make_sounds.py` generates two short original `.wav` files (needs input, done) into `sounds/`; test it produces valid audio
     - [ ] Play them with `$.audio.play` on the specified transitions only
