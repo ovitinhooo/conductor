@@ -14,13 +14,13 @@
 
 ## Phase 2: Progress Model (pure logic)
 
-- [ ] Task: Write failing tests for the plan-to-bar model
-    - [ ] Write them as `*.test.ts` files run by `claude plugin test`, against a pure `hooks/model.ts` that never touches `$` (the validator rejects `$` passed to imported functions)
-    - [ ] State derivation (running, needs_input via `is_phase_verification`, done, idle)
-    - [ ] Percent, phase capsules and task dots from `status` output
-    - [ ] Row selection: in_progress first, else first pending, max 3, "+N more"
-    - [ ] Dismissal rules and sound triggers (once per transition, never on initial load)
-    - [ ] Fail-soft input: missing fields, empty tracks, invalid JSON
+- [x] Task: Write failing tests for the plan-to-bar model 857e527
+    - [x] Write them as `*.test.ts` files run by `claude plugin test`, against a pure `hooks/model.ts` that never touches `$` (the validator rejects `$` passed to imported functions)
+    - [x] State derivation (running, needs_input via `is_phase_verification`, done, idle)
+    - [x] Percent, phase capsules and task dots from `status` output
+    - [x] Row selection: in_progress first, else first pending, max 3, "+N more"
+    - [x] Dismissal rules and sound triggers (once per transition, never on initial load)
+    - [x] Fail-soft input: missing fields, empty tracks, invalid JSON
 - [ ] Task: Implement the model to pass the tests
     - [ ] Pure functions with no engine imports, per the style guides
     - [ ] Cover edge cases from the tests; keep coverage above 80%
