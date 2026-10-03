@@ -29,7 +29,7 @@
     - [x] Throttle and skip refresh when output is unchanged; fail soft (show nothing) when Python or the script is missing
 - [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) 85a8cb3
 
-## Phase 3: Module Rendering, Controls and Sounds
+## Phase 3: Module Rendering, Controls and Sounds [checkpoint: 13c7be0]
 
 - [x] Task: Write failing `claude plugin test` scenarios for the module 5932687
     - [x] Read the mods test docs first (stubbing `$.process`/`$.store`, testing drawings and timers)
@@ -45,7 +45,7 @@
 - [x] Task: Add the sounds 13c7be0
     - [x] `scripts/make_sounds.py` generates two short original `.wav` files (needs input, done) into `sounds/`; test it produces valid audio
     - [x] Play them with `$.audio.play` on the specified transitions only
-- [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+- [x] Task: Phase Verification & Checkpoint (Refer to workflow.md) 13c7be0
 
 ## Phase 4: Plugin, Lint and CI Integration
 
