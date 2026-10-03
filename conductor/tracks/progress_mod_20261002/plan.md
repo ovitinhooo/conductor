@@ -51,8 +51,8 @@
 
 - [x] Task: Write failing lint tests for the new manifest files ac482b7
     - [x] `lint_skills.py` reports a `hooks.json` without exactly one existing module path, or a missing `types` file, and passes on the valid layout (extend `tests/test_lint_skills.py`)
-- [ ] Task: Implement the lint checks and wire the plugin
-    - [ ] Final `hooks/hooks.json` (plus `types/index.d.ts` and the `types` field only if `$.state` is used); keep `VERSION` in sync and `marketplace.json` free of `version`
+- [x] Task: Implement the lint checks and wire the plugin bf0a7be
+    - [x] Final `hooks/hooks.json` (plus `types/index.d.ts` and the `types` field only if `$.state` is used); keep `VERSION` in sync and `marketplace.json` free of `version`
 - [ ] Task: Write failing tests for the staged-copy validation script
     - [ ] `tests/test_validate_mod.py`: staging copies the repo without `.git`, the generated `tsconfig.json` and `.claude-plugin/types`, places the root `plugin.json` at `.claude-plugin/plugin.json`, and leaves the original tree untouched
     - [ ] The `claude` command is injectable so the test stubs it; a stubbed "Validation passed" with no `hooks:` line fails, and one that lists hooks passes
