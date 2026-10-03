@@ -2,7 +2,7 @@
 
 ## Phase 1: Spike and Scaffolding
 
-- [ ] Task: Verify the mod API against the installed Claude Code
+- [~] Task: Verify the mod API against the installed Claude Code
     - [ ] Load `zycck/claude-mods` `plan-progress` in a scratch session and confirm: `hooks.json` `modules`, the `claude-code` import (atoms, footer button, slash commands, sound playback, per-user storage), and desktop vs terminal behavior
     - [ ] Confirm whether a module can spawn `python3` (Assumption 3) and note the fallback if not
     - [ ] Record the findings, and any spec changes they force, in `conductor/tracks/progress_mod_20261002/notes.md`; run `conductor-revise` if the spec must change
