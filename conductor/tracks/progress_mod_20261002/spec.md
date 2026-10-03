@@ -13,8 +13,9 @@ without mod support ignore it, so the skills keep working unchanged.
 ## Functional Requirements
 
 1. **Module registration.** The root plugin declares the mod through
-   `hooks/hooks.json` (`modules`) and registers one module that renders the bars,
-   the footer button, the commands and the sounds.
+   `hooks/hooks.json` (`"modules": ["./register.ts"]`, exactly one path). The
+   module exports `register(on)` and uses the `$` mods API to render the bars, the
+   button, the commands and the sounds. It loads directly, with no build step.
 2. **Track bars.** One row per active track (status `in_progress`; if none, the
    first `pending` track), at most 3 rows with a "+N more" indicator. Each row
    shows: state glyph, track title, progress bar, percent, and a close button.
@@ -28,34 +29,42 @@ without mod support ignore it, so the skills keep working unchanged.
    green). `idle`: tracks exist but no task is in progress.
 5. **Live refresh.** The mod refreshes the bars when the files change (polling at
    a short interval while the session is open, and after tool calls), without
-   Claude calling any tool and without blocking the UI.
+   Claude calling any tool and without blocking the UI. The band does not redraw
+   on its own: a `$.clock.every` timer and the tool-call hook call
+   `$.ui.invalidate('ui.render')`.
 6. **Data source.** Progress comes from the Conductor state script's `locate`,
-   `tracks` and `status` commands, so parsing rules (phases, sub-tasks,
+   `tracks` and `status` commands, run with `$.process.run` (no TypeScript parser
+   port), so parsing rules (phases, sub-tasks,
    checkpoints, verification detection) live in one place. The Conductor directory
    is resolved with the same rules as the skills, including `CONDUCTOR_DIR`.
 7. **Commands.** `/conductor-progress` shows or hides the bars.
    `/conductor-progress-sound` mutes or unmutes the sounds.
-8. **Footer button.** A "Conductor" button in the footer does the same as
-   `/conductor-progress` and is shown while the mod is loaded.
+8. **Band button.** A "Conductor" `Button` with a hotkey in the `AbovePrompt` band
+   does the same as `/conductor-progress` (a digit hotkey also fires from an empty
+   prompt). The band is shared, so the mod keeps other mods' drawing by placing
+   `await next(e)` inside its own tree. There is no footer render site.
 9. **Sounds.** A short sound plays when a track enters `needs_input` and when it
    becomes `done`, never on the initial load of an already-finished track.
 10. **Dismissal.** Closing a bar hides it for the current session; it returns if the
     track changes state afterwards.
 11. **Opt-in and quiet by default.** Nothing renders when no initialized Conductor
     directory or no track exists. The show/hide and mute choices are remembered
-    per user, never written to the repository.
+    per user in `$.store`, never written to the repository.
 12. **Plugin integration.** `plugin.json`, `marketplace.json`, `VERSION`,
     `lint_skills.py` and CI stay consistent: the linter validates that
-    `hooks.json` modules and any `types` file exist, and `claude plugin validate`
-    still passes.
-13. **Tests.** The module is compiled and driven against a stub engine in CI
-    (Node 22, already used by the plugin-validation job). Unit tests cover the
-    plan-to-bar model: state derivation, percent, phase/task dots, the "+N more"
-    cut-off, dismissal and sound triggers. A manual live checklist covers
-    rendering and audio.
+    `hooks.json` lists exactly one module path that exists (and any `types` file),
+    and `claude plugin validate` passes and lists the module's hooks and `$` calls.
+13. **Tests.** Tests are `*.test.ts` files run by the official `claude plugin
+    test` harness, in CI through `npx -y @anthropic-ai/claude-code plugin test`.
+    They cover the plan-to-bar model (a pure file that never touches `$`): state
+    derivation, percent, phase/task dots, the "+N more" cut-off, dismissal and
+    sound triggers, plus commands, the button, drawing and fail-soft cases. A
+    manual live checklist covers real rendering and audio.
 14. **Docs.** The README gets a section on the mod (what it shows, commands, how it
-    behaves in the desktop app and the terminal), and `CONTRIBUTING.md` documents
-    the new test commands.
+    behaves in the desktop app and the terminal), states the minimum Claude Code
+    version (2.1.287, when mods arrived) and the version it was tested with
+    because mod events and methods can change between releases, and
+    `CONTRIBUTING.md` documents the new test commands.
 
 ## Non-Functional Requirements
 
@@ -68,10 +77,13 @@ without mod support ignore it, so the skills keep working unchanged.
   skipped while the files are unchanged.
 - **Accessibility:** state colors keep at least 4.5:1 contrast for the text on
   them, and state is never conveyed by color alone (glyph plus label).
-- **Compatibility:** works in the desktop app and the terminal; narrow widths
-  degrade (drop the pill, then the dots) instead of overflowing.
+- **Compatibility:** works in the desktop app (bars drawn as `Svg`) and the
+  terminal (`Box`/`Text`); narrow widths degrade (drop the pill, then the dots)
+  instead of overflowing. On Claude Code older than 2.1.287 the skills must keep
+  working; this is verified, or recorded as unverified in the track notes.
 - **No new runtime dependencies** for Python users; the mod is the only
-  JavaScript/TypeScript in the repository, and Node is needed only for its tests.
+  TypeScript in the repository, needs no build step or `typescript` package, and
+  Node is needed only to run `claude plugin test` in CI.
 - **Style:** follows the Python and general style guides for any scripts, and the
   conventional-commit and release-please flow for versioning.
 
@@ -101,6 +113,8 @@ without mod support ignore it, so the skills keep working unchanged.
   the current checkout; `status --branches` stays CLI-only).
 - Editing plans from the UI.
 - Antigravity UI support.
+- A `SessionMode` footer item and panes (v1 draws only in the band above the
+  prompt).
 
 ## References
 
@@ -109,6 +123,10 @@ without mod support ignore it, so the skills keep working unchanged.
   plan.md/tracks.md formats.
 - `plugin.json`, `.claude-plugin/marketplace.json`, `scripts/lint_skills.py`,
   `.github/workflows/ci.yml`: manifest, linter and CI constraints.
+- Claude Code mods docs (https://code.claude.com/docs/en/plugins/mods/):
+  reference, create, interface and test. The types Claude Code writes for the
+  installed version win over any page when they disagree.
+- `conductor/tracks/progress_mod_20261002/notes.md`: verified API findings.
 - Inspiration only (not a binding contract): `zycck/claude-mods`
   `plugins/plan-progress` (MIT).
 
@@ -118,27 +136,25 @@ None yet (this is the project's first track).
 
 ## Assumptions
 
-1. **Mod API.** I inspected a single third-party example, not official docs. I
-   assume the same API: `hooks.json` `modules`, a `claude-code` module with atoms
-   and footer/command registration, and optional `types`. It looks new, so the
-   first task is a spike that confirms it against the installed Claude Code, and
-   the plan adapts if it differs.
-2. **Language and build.** The module is TypeScript (`.tsx`) like the example,
-   compiled by the host or by the test harness; `typescript` is installed only in
-   the CI test job.
-3. **Data access.** The mod may spawn `python3 scripts/conductor_state.py` from the
-   plugin root against the project root; if the engine disallows subprocesses, it
-   falls back to reading files and a small TypeScript port of the parser with a
-   parity test.
-4. **Refresh interval.** About 2 seconds, plus after tool calls; tunable in code,
-   not user-facing.
-5. **Persistence.** Show/hide and mute are stored through the engine's per-user
-   storage if it offers one, otherwise per session.
-6. **Sounds.** Two short original `.wav` files generated by a script in the repo
-   (no third-party audio copied).
-7. **Attribution.** All mod code is written fresh; if any code is adapted from
+1. **Refresh interval.** About 2 seconds through `$.clock.every`, plus after tool
+   calls; tunable in code, not user-facing.
+2. **Sounds.** Two short original `.wav` files generated by a script in the repo
+   (no third-party audio copied), played with `$.audio.play`.
+3. **Attribution.** All mod code is written fresh; if any code is adapted from
    `plan-progress`, its MIT notice is kept.
-8. **Display.** At most 3 bars, ordered by status then registry order; a finished
+4. **Display.** At most 3 bars, ordered by status then registry order; a finished
    bar stays until closed.
-9. **Release.** A single `feat` commit flows through release-please; no manual
+5. **Release.** A single `feat` commit flows through release-please; no manual
    version bump.
+
+Resolved by the API spike (see `notes.md`): the mod API shape and its minimum
+version, TypeScript loading without a build, `$.process.run` for the state
+script, and `$.store` for per-user persistence.
+
+## Revision History
+
+- 2026-10-02: Align the spec with the verified Claude Code mod API: band button
+  instead of a footer button, `claude plugin test` instead of a custom stub
+  engine, `$.store` persistence, `$.process.run` data access, `register(on)` with
+  `$`, a `$.clock.every` redraw timer, and a minimum-version requirement (API
+  spike findings in `notes.md`).
